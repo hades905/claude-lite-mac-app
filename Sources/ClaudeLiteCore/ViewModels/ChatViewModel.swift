@@ -1,0 +1,190 @@
+import Foundation
+import Observation
+
+@MainActor
+@Observable
+public final class ChatViewModel {
+    public static let pendingReplyText = "正在回复..."
+
+    public private(set) var messages: [ChatMessage] = []
+    public private(set) var availableModels: [ClaudeModel] = []
+    public private(set) var selectedModel: ClaudeModel?
+    public private(set) var connectionStatus: ConnectionStatus = .checking
+    public private(set) var isStarting = false
+    public private(set) var isSending = false
+    public private(set) var errorMessage: String?
+    public var draftText = ""
+    public private(set) var draftAttachments: [ChatAttachment] = []
+
+    private let services: any ClaudeLiteServiceContainer
+    private var bootstrapConfiguration: BootstrapConfiguration?
+
+    public init(services: any ClaudeLiteServiceContainer) {
+        self.services = services
+    }
+
+    public func start() async throws {
+        isStarting = true
+        defer { isStarting = false }
+
+        bootstrapConfiguration = try services.bootstrapLoader.loadBootstrapConfiguration()
+
+        let snapshot = try services.sessionStore.load()
+        messages = snapshot.messages
+        connectionStatus = snapshot.lastConnectionStatus
+
+        let apiKey = try resolvedModelAPIKey()
+        connectionStatus = .checking
+
+        if let apiKey, !apiKey.isEmpty {
+            availableModels = try await services.modelService.fetchClaudeModels(apiKey: apiKey)
+            selectedModel = ModelCatalog.resolveSelection(
+                available: availableModels,
+                storedSelection: snapshot.selectedModelID,
+                bootstrapDefault: bootstrapConfiguration?.defaultModel
+            )
+            connectionStatus = await services.connectionService.checkConnection(apiKey: apiKey)
+        } else {
+            availableModels = []
+            selectedModel = nil
+            connectionStatus = .authFailed
+        }
+
+        try persistSnapshot()
+    }
+
+    public func refreshConnection() async {
+        do {
+            let apiKey = try resolvedModelAPIKey()
+            connectionStatus = .checking
+            connectionStatus = await services.connectionService.checkConnection(apiKey: apiKey)
+
+            if let apiKey, connectionStatus == .connected {
+                availableModels = try await services.modelService.fetchClaudeModels(apiKey: apiKey)
+                selectedModel = ModelCatalog.resolveSelection(
+                    available: availableModels,
+                    storedSelection: selectedModel?.id,
+                    bootstrapDefault: bootstrapConfiguration?.defaultModel
+                )
+            }
+
+            try persistSnapshot()
+        } catch {
+            errorMessage = readableMessage(for: error)
+            connectionStatus = .disconnected
+        }
+    }
+
+    public func selectModel(id: String) {
+        selectedModel = availableModels.first(where: { $0.id == id })
+        try? persistSnapshot()
+    }
+
+    public func addAttachment(from fileURL: URL) {
+        let isImage = ["png", "jpg", "jpeg", "gif", "webp", "heic"].contains(fileURL.pathExtension.lowercased())
+        let attachment = ChatAttachment(
+            name: fileURL.lastPathComponent,
+            kind: isImage ? .image : .file,
+            localURL: fileURL
+        )
+        draftAttachments.append(attachment)
+    }
+
+    public func removeDraftAttachment(id: UUID) {
+        draftAttachments.removeAll { $0.id == id }
+    }
+
+    public func send() async throws {
+        let trimmed = draftText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty || !draftAttachments.isEmpty else {
+            return
+        }
+
+        guard let apiKey = try resolvedModelAPIKey(), !apiKey.isEmpty else {
+            connectionStatus = .authFailed
+            throw ChatViewModelError.missingAPIKey
+        }
+
+        guard let selectedModel else {
+            throw ChatViewModelError.missingModel
+        }
+
+        isSending = true
+        defer { isSending = false }
+
+        errorMessage = nil
+        let outgoing = ChatMessage.user(text: trimmed, attachments: draftAttachments)
+        let conversation = messages + [outgoing]
+        let pendingReplyID = UUID()
+        let pendingReply = ChatMessage.assistant(
+            id: pendingReplyID,
+            text: Self.pendingReplyText,
+            status: .pending
+        )
+        messages.append(outgoing)
+        messages.append(pendingReply)
+        draftText = ""
+        draftAttachments = []
+        try persistSnapshot()
+
+        do {
+            let reply = try await services.chatService.sendMessage(
+                conversation: conversation,
+                modelID: selectedModel.id,
+                apiKey: apiKey
+            )
+            replaceMessage(
+                id: pendingReplyID,
+                with: reply.replacing(id: pendingReplyID, status: .sent)
+            )
+            connectionStatus = .connected
+            try persistSnapshot()
+        } catch {
+            messages.removeAll { $0.id == pendingReplyID }
+            errorMessage = readableMessage(for: error)
+            connectionStatus = .disconnected
+            try persistSnapshot()
+            throw error
+        }
+    }
+
+    private func resolvedModelAPIKey() throws -> String? {
+        return bootstrapConfiguration?.modelAPIKey
+    }
+
+    private func persistSnapshot() throws {
+        let snapshot = SessionSnapshot(
+            messages: messages.filter { $0.status != .pending },
+            selectedModelID: selectedModel?.id,
+            lastConnectionStatus: connectionStatus
+        )
+        try services.sessionStore.save(snapshot)
+    }
+
+    private func replaceMessage(id: UUID, with updated: ChatMessage) {
+        guard let index = messages.firstIndex(where: { $0.id == id }) else {
+            messages.append(updated)
+            return
+        }
+
+        messages[index] = updated
+    }
+
+    private func readableMessage(for error: Error) -> String {
+        switch error {
+        case TuziAPIError.unauthorized:
+            "Key not accepted."
+        case ChatViewModelError.missingAPIKey:
+            "Key not accepted."
+        case ChatViewModelError.missingModel:
+            "Selected model is unavailable."
+        default:
+            "Can’t reach server."
+        }
+    }
+}
+
+public enum ChatViewModelError: Error {
+    case missingAPIKey
+    case missingModel
+}
