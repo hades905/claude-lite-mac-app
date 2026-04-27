@@ -6,6 +6,12 @@ struct MainWindowView: View {
     @State private var viewModel: ChatViewModel
     @State private var showingFilePicker = false
     @State private var showingImagePicker = false
+    @State private var composerHeight = ChatInputHeight.default
+    @State private var jumpButtonState = ChatJumpButtonState()
+    @State private var latestAssistantFrame: CGRect?
+    @State private var scrollViewportHeight: CGFloat = 0
+    @State private var previousLatestAssistantFrame: CGRect?
+    @State private var jumpButtonIdleTask: Task<Void, Never>?
 
     init(viewModel: ChatViewModel) {
         _viewModel = State(initialValue: viewModel)
@@ -75,11 +81,20 @@ struct MainWindowView: View {
             .disabled(viewModel.availableModels.isEmpty)
 
             Button("Check Again") {
+                guard !isConnectionRefreshDisabled else {
+                    return
+                }
+
                 Task {
+                    guard !isConnectionRefreshDisabled else {
+                        return
+                    }
+
                     await viewModel.refreshConnection()
                 }
             }
             .buttonStyle(.bordered)
+            .disabled(isConnectionRefreshDisabled)
         }
         .padding(20)
     }
@@ -99,25 +114,106 @@ struct MainWindowView: View {
     }
 
     private var messageArea: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                if viewModel.messages.isEmpty {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("Your conversation will stay here.")
-                            .font(.system(size: 22, weight: .semibold))
-                        Text("Start with a message, add a file or image, and keep the same thread across launches.")
-                            .foregroundStyle(.secondary)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.top, 24)
-                }
+        ScrollViewReader { scrollProxy in
+            GeometryReader { scrollGeometry in
+                ZStack(alignment: .bottomTrailing) {
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 16) {
+                            if viewModel.messages.isEmpty {
+                                VStack(alignment: .leading, spacing: 10) {
+                                    Text("Your conversation will stay here.")
+                                        .font(.system(size: 22, weight: .semibold))
+                                    Text("Start with a message, add a file or image, and keep the same thread across launches.")
+                                        .foregroundStyle(.secondary)
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.top, 24)
+                            }
 
-                ForEach(viewModel.messages) { message in
-                    MessageBubble(message: message)
+                            ForEach(viewModel.messages) { message in
+                                MessageBubble(message: message)
+                                    .id(message.id)
+                                    .background {
+                                        if MessageFrameTrackingPolicy.shouldTrack(
+                                            messageID: message.id,
+                                            trackedMessageID: latestAssistantID
+                                        ) {
+                                            GeometryReader { messageGeometry in
+                                                Color.clear.preference(
+                                                    key: MessageFramePreferenceKey.self,
+                                                    value: MessageFrameTrackingPolicy.preferenceValue(
+                                                        messageID: message.id,
+                                                        trackedMessageID: latestAssistantID,
+                                                        frame: messageGeometry.frame(in: .named(Self.chatScrollCoordinateSpace))
+                                                    )
+                                                )
+                                            }
+                                        } else {
+                                            Color.clear
+                                        }
+                                    }
+                            }
+                        }
+                        .padding(20)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .coordinateSpace(name: Self.chatScrollCoordinateSpace)
+                    .onAppear {
+                        scrollViewportHeight = scrollGeometry.size.height
+                        refreshJumpButtonState(targetID: latestAssistantID)
+                    }
+                    .onChange(of: scrollGeometry.size.height) { _, newHeight in
+                        scrollViewportHeight = newHeight
+                        refreshJumpButtonState(targetID: latestAssistantID)
+                    }
+                    .onChange(of: latestAssistantID) { _, newID in
+                        previousLatestAssistantFrame = nil
+                        refreshJumpButtonState(targetID: newID)
+                    }
+                    .onPreferenceChange(MessageFramePreferenceKey.self) { frames in
+                        guard let latestAssistantID else {
+                            latestAssistantFrame = nil
+                            previousLatestAssistantFrame = nil
+                            refreshJumpButtonState(targetID: nil)
+                            return
+                        }
+
+                        let nextFrame = frames[latestAssistantID]
+                        guard didLatestAssistantFrameChange(from: latestAssistantFrame, to: nextFrame) else {
+                            return
+                        }
+
+                        latestAssistantFrame = nextFrame
+                        let didMove = didLatestAssistantFrameMove(from: previousLatestAssistantFrame, to: nextFrame)
+                        refreshJumpButtonState(targetID: latestAssistantID, treatAsScroll: didMove)
+                        previousLatestAssistantFrame = latestAssistantFrame
+                    }
+
+                    if jumpButtonState.isVisible, let latestAssistantID {
+                        Button {
+                            jumpButtonIdleTask?.cancel()
+                            withAnimation(.easeOut(duration: 0.18)) {
+                                jumpButtonState.hideAfterJump()
+                            }
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                scrollProxy.scrollTo(latestAssistantID, anchor: .top)
+                            }
+                        } label: {
+                            Image(systemName: "arrow.down")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundStyle(Color.accentColor)
+                                .frame(width: 42, height: 42)
+                                .background(.regularMaterial)
+                                .clipShape(Circle())
+                                .shadow(color: .black.opacity(0.12), radius: 10, x: 0, y: 4)
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.trailing, 22)
+                        .padding(.bottom, 22)
+                        .transition(.opacity.combined(with: .scale(scale: 0.94)))
+                    }
                 }
             }
-            .padding(20)
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
@@ -141,12 +237,13 @@ struct MainWindowView: View {
                 }
             }
 
-            TextEditor(text: $viewModel.draftText)
-                .font(.system(size: 14))
-                .frame(minHeight: 100, maxHeight: 150)
-                .padding(10)
-                .background(Color(nsColor: .textBackgroundColor))
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            ChatComposerInputView(
+                text: $viewModel.draftText,
+                height: $composerHeight,
+                isSubmitEnabled: !isSendDisabled
+            ) {
+                sendDraft()
+            }
 
             HStack {
                 Button("Add File") {
@@ -161,16 +258,112 @@ struct MainWindowView: View {
 
                 Spacer()
 
-                Button(viewModel.isSending ? "Sending..." : "Send") {
-                    Task {
-                        try? await viewModel.send()
+                Button {
+                    guard !isSendDisabled else {
+                        return
                     }
+
+                    sendDraft()
+                } label: {
+                    Text(viewModel.isSending ? "Sending..." : "Send")
+                        .frame(minWidth: 72)
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(viewModel.isSending)
+                .disabled(isSendDisabled)
             }
         }
         .padding(20)
+    }
+
+    private var isConnectionRefreshDisabled: Bool {
+        viewModel.connectionStatus == .checking || viewModel.isStarting
+    }
+
+    private var isSendDisabled: Bool {
+        viewModel.isSending || !hasDraftContent
+    }
+
+    private var hasDraftContent: Bool {
+        !viewModel.draftText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !viewModel.draftAttachments.isEmpty
+    }
+
+    private var latestAssistantID: UUID? {
+        ChatJumpTargetResolver.latestAssistantID(in: viewModel.messages)
+    }
+
+    private func sendDraft() {
+        Task {
+            guard !isSendDisabled else {
+                return
+            }
+
+            try? await viewModel.send()
+        }
+    }
+
+    private func refreshJumpButtonState(targetID: UUID?, treatAsScroll: Bool = false) {
+        let latestAssistantIsNear = isLatestAssistantNear
+        let wasVisible = jumpButtonState.isVisible
+
+        withAnimation(.easeOut(duration: 0.18)) {
+            jumpButtonState.update(targetID: targetID, latestAssistantIsNear: latestAssistantIsNear)
+            if treatAsScroll {
+                jumpButtonState.userScrolled()
+            }
+        }
+
+        if jumpButtonState.isVisible {
+            scheduleJumpButtonIdleHide()
+        } else if wasVisible {
+            jumpButtonIdleTask?.cancel()
+        }
+    }
+
+    private var isLatestAssistantNear: Bool {
+        guard latestAssistantID != nil, let latestAssistantFrame, scrollViewportHeight > 0 else {
+            return true
+        }
+
+        let tolerance: CGFloat = 80
+        return latestAssistantFrame.minY <= scrollViewportHeight + tolerance
+            && latestAssistantFrame.maxY >= -tolerance
+    }
+
+    private func didLatestAssistantFrameMove(from oldFrame: CGRect?, to newFrame: CGRect?) -> Bool {
+        guard let oldFrame, let newFrame else {
+            return false
+        }
+
+        return abs(oldFrame.minY - newFrame.minY) > 2
+    }
+
+    private func didLatestAssistantFrameChange(from oldFrame: CGRect?, to newFrame: CGRect?) -> Bool {
+        switch (oldFrame, newFrame) {
+        case (nil, nil):
+            false
+        case (nil, _), (_, nil):
+            true
+        case let (oldFrame?, newFrame?):
+            abs(oldFrame.minY - newFrame.minY) > 0.5
+                || abs(oldFrame.maxY - newFrame.maxY) > 0.5
+                || abs(oldFrame.width - newFrame.width) > 0.5
+        }
+    }
+
+    private func scheduleJumpButtonIdleHide() {
+        jumpButtonIdleTask?.cancel()
+        jumpButtonIdleTask = Task {
+            try? await Task.sleep(for: .seconds(10))
+            guard !Task.isCancelled else {
+                return
+            }
+
+            await MainActor.run {
+                withAnimation(.easeOut(duration: 0.18)) {
+                    jumpButtonState.hideForIdleTimeout()
+                }
+            }
+        }
     }
 
     private var statusColor: Color {
@@ -198,6 +391,16 @@ struct MainWindowView: View {
             "A valid key is still needed."
         }
     }
+
+    private static let chatScrollCoordinateSpace = "ClaudeLiteChatScroll"
+}
+
+private struct MessageFramePreferenceKey: PreferenceKey {
+    static let defaultValue: [UUID: CGRect] = [:]
+
+    static func reduce(value: inout [UUID: CGRect], nextValue: () -> [UUID: CGRect]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, newValue in newValue })
+    }
 }
 
 private struct MessageBubble: View {
@@ -222,12 +425,16 @@ private struct MessageBubble: View {
                 }
 
                 if !message.text.isEmpty {
-                    if message.status == .pending {
+                    switch MessageTextRenderingStrategy.strategy(for: message) {
+                    case .nativeText:
                         Text(message.text)
-                            .foregroundStyle(.secondary)
-                            .italic()
+                            .foregroundStyle(message.status == .pending ? .secondary : .primary)
+                            .italic(message.status == .pending)
                             .textSelection(.enabled)
-                    } else {
+                    case .nativeMarkdown:
+                        NativeMarkdownText(markdown: message.text)
+                            .textSelection(.enabled)
+                    case .webMarkdown:
                         MarkdownMessageView(markdown: message.text)
                             .frame(maxWidth: 580, alignment: .leading)
                     }
@@ -239,6 +446,18 @@ private struct MessageBubble: View {
             .frame(maxWidth: 580, alignment: message.role == .user ? .trailing : .leading)
         }
         .frame(maxWidth: .infinity, alignment: message.role == .user ? .trailing : .leading)
+    }
+}
+
+private struct NativeMarkdownText: View {
+    let markdown: String
+
+    var body: Text {
+        guard let attributed = try? AttributedString(markdown: markdown) else {
+            return Text(markdown)
+        }
+
+        return Text(attributed)
     }
 }
 

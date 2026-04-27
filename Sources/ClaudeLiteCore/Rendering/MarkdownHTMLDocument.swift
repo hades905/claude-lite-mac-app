@@ -6,8 +6,11 @@ public enum MarkdownHTMLDocument {
     private static let mathJaxRuntime = loadJavaScriptAsset(named: "tex-svg")
 
     public static func makeHTML(for markdown: String) -> String {
+        let preparedMarkdown = prepareMarkdownForMarked(markdown)
         let source = javaScriptStringLiteral(for: markdown)
-        let includesMath = containsMath(in: markdown)
+        let markdownSource = javaScriptStringLiteral(for: preparedMarkdown.source)
+        let protectedMathSegments = javaScriptStringPairsLiteral(for: preparedMarkdown.protectedMathSegments)
+        let includesMath = !preparedMarkdown.protectedMathSegments.isEmpty
         let mathJaxConfiguration = includesMath ? """
           <script>
             window.MathJax = {
@@ -171,6 +174,8 @@ public enum MarkdownHTMLDocument {
           <article id="content"></article>
           <script>
             const source = \(source);
+            const markdownSource = \(markdownSource);
+            const protectedMathSegments = \(protectedMathSegments);
             const article = document.getElementById('content');
             window.__renderComplete = false;
 
@@ -193,16 +198,22 @@ public enum MarkdownHTMLDocument {
               reportHeight();
             }
 
+            function restoreProtectedMath(html) {
+              return protectedMathSegments.reduce((result, segment) => {
+                return result.replaceAll(segment[0], segment[1]);
+              }, html);
+            }
+
             function renderMarkdown() {
               if (!window.marked?.parse) {
                 renderFallback();
                 return;
               }
 
-              article.innerHTML = window.marked.parse(source, {
+              article.innerHTML = restoreProtectedMath(window.marked.parse(markdownSource, {
                 gfm: true,
                 breaks: true
-              });
+              }));
               article.className = '';
               reportHeight();
 
@@ -240,6 +251,10 @@ public enum MarkdownHTMLDocument {
         try? FileManager.default.removeItem(at: fileURL)
     }
 
+    public static func containsSupportedMath(in markdown: String) -> Bool {
+        !prepareMarkdownForMarked(markdown).protectedMathSegments.isEmpty
+    }
+
     private static func javaScriptStringLiteral(for markdown: String) -> String {
         let jsonObject = [markdown]
         let data = try? JSONSerialization.data(withJSONObject: jsonObject)
@@ -247,11 +262,156 @@ public enum MarkdownHTMLDocument {
         return String(string.dropFirst().dropLast())
     }
 
-    private static func containsMath(in markdown: String) -> Bool {
-        markdown.contains("$$")
-            || markdown.contains("$")
-            || markdown.contains("\\(")
-            || markdown.contains("\\[")
+    private static func javaScriptStringPairsLiteral(for pairs: [(String, String)]) -> String {
+        let jsonObject = pairs.map { [$0.0, $0.1] }
+        let data = try? JSONSerialization.data(withJSONObject: jsonObject)
+        return data.flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
+    }
+
+    private static func prepareMarkdownForMarked(_ markdown: String) -> (source: String, protectedMathSegments: [(String, String)]) {
+        var source = ""
+        var protectedMathSegments: [(String, String)] = []
+        var index = markdown.startIndex
+
+        while index < markdown.endIndex {
+            if let mathRange = mathRangeStarting(at: index, in: markdown) {
+                let placeholder = "%%CLAUDE_LITE_MATH_SEGMENT_\(protectedMathSegments.count)%%"
+                source.append(placeholder)
+                protectedMathSegments.append((placeholder, htmlEscaped(String(markdown[mathRange]))))
+                index = mathRange.upperBound
+            } else {
+                source.append(markdown[index])
+                index = markdown.index(after: index)
+            }
+        }
+
+        return (source, protectedMathSegments)
+    }
+
+    private static func htmlEscaped(_ string: String) -> String {
+        string
+            .replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
+    }
+
+    private static func mathRangeStarting(at index: String.Index, in markdown: String) -> Range<String.Index>? {
+        if let displayRange = delimitedMathRangeStarting(
+            at: index,
+            in: markdown,
+            opening: "$$",
+            closing: "$$"
+        ) {
+            return displayRange
+        }
+
+        if let escapedParenRange = delimitedMathRangeStarting(
+            at: index,
+            in: markdown,
+            opening: "\\(",
+            closing: "\\)"
+        ) {
+            return escapedParenRange
+        }
+
+        if let escapedBracketRange = delimitedMathRangeStarting(
+            at: index,
+            in: markdown,
+            opening: "\\[",
+            closing: "\\]"
+        ) {
+            return escapedBracketRange
+        }
+
+        return inlineDollarMathRangeStarting(at: index, in: markdown)
+    }
+
+    private static func delimitedMathRangeStarting(
+        at index: String.Index,
+        in markdown: String,
+        opening: String,
+        closing: String
+    ) -> Range<String.Index>? {
+        guard markdown[index...].hasPrefix(opening) else {
+            return nil
+        }
+
+        let contentStart = markdown.index(index, offsetBy: opening.count)
+        guard let closingRange = markdown.range(of: closing, range: contentStart..<markdown.endIndex) else {
+            return nil
+        }
+
+        let content = markdown[contentStart..<closingRange.lowerBound]
+        guard content.contains(where: { !$0.isWhitespace }) else {
+            return nil
+        }
+
+        return index..<closingRange.upperBound
+    }
+
+    private static func inlineDollarMathRangeStarting(at index: String.Index, in markdown: String) -> Range<String.Index>? {
+        guard isSingleUnescapedDollar(at: index, in: markdown) else {
+            return nil
+        }
+
+        let contentStart = markdown.index(after: index)
+        var closingSearchStart = contentStart
+        while let closingIndex = markdown[closingSearchStart..<markdown.endIndex].firstIndex(of: "$") {
+            guard isSingleUnescapedDollar(at: closingIndex, in: markdown) else {
+                closingSearchStart = markdown.index(after: closingIndex)
+                continue
+            }
+
+            guard isLikelyInlineMath(markdown[contentStart..<closingIndex]) else {
+                return nil
+            }
+
+            return index..<markdown.index(after: closingIndex)
+        }
+
+        return nil
+    }
+
+    private static func isSingleUnescapedDollar(at index: String.Index, in markdown: String) -> Bool {
+        guard markdown[index] == "$" else {
+            return false
+        }
+
+        if index > markdown.startIndex {
+            let previousIndex = markdown.index(before: index)
+            if markdown[previousIndex] == "\\" || markdown[previousIndex] == "$" {
+                return false
+            }
+        }
+
+        let nextIndex = markdown.index(after: index)
+        if nextIndex < markdown.endIndex, markdown[nextIndex] == "$" {
+            return false
+        }
+
+        return true
+    }
+
+    private static func isLikelyInlineMath(_ content: Substring) -> Bool {
+        guard
+            !content.isEmpty,
+            content.first?.isWhitespace != true,
+            content.last?.isWhitespace != true
+        else {
+            return false
+        }
+
+        let mathCharacters: Set<Character> = ["\\", "^", "_", "=", "+", "-", "*", "/", "<", ">", "{", "}", "|"]
+        if content.contains(where: { mathCharacters.contains($0) }) {
+            return true
+        }
+
+        if content.allSatisfy({ $0.isNumber || $0 == "." || $0 == "," }) {
+            return false
+        }
+
+        return content.contains(where: { $0.isLetter })
+            && content.allSatisfy { $0.isLetter || $0.isNumber }
     }
 
     private static func preparedRenderingDirectory() throws -> URL {

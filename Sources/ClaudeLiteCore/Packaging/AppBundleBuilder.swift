@@ -11,7 +11,8 @@ public final class AppBundleBuilder {
         config: AppBundleConfig,
         executableURL: URL,
         iconURL: URL,
-        outputDirectory: URL
+        outputDirectory: URL,
+        bootstrapConfigurationURL: URL? = nil
     ) throws -> URL {
         let bundleURL = fileURL(appending: config.bundleName, to: outputDirectory, isDirectory: true)
         let contentsURL = fileURL(appending: "Contents", to: bundleURL, isDirectory: true)
@@ -31,6 +32,7 @@ public final class AppBundleBuilder {
         try fileManager.copyItem(at: executableURL, to: finalExecutableURL)
         try fileManager.copyItem(at: iconURL, to: finalIconURL)
         try copySiblingBundles(near: executableURL, to: resourcesURL, appBundleURL: bundleURL)
+        try copyBootstrapConfiguration(from: bootstrapConfigurationURL, to: resourcesURL, appBundleURL: bundleURL)
         try writePlist(config: config, to: plistURL)
         try setExecutablePermissions(at: finalExecutableURL)
 
@@ -46,8 +48,8 @@ public final class AppBundleBuilder {
             "CFBundleInfoDictionaryVersion": "6.0",
             "CFBundleName": config.appName,
             "CFBundlePackageType": "APPL",
-            "CFBundleShortVersionString": "1.0.0",
-            "CFBundleVersion": "1",
+            "CFBundleShortVersionString": "1.0.1",
+            "CFBundleVersion": "2",
             "LSMinimumSystemVersion": "14.0",
             "NSHighResolutionCapable": true
         ]
@@ -88,6 +90,35 @@ public final class AppBundleBuilder {
             try fileManager.copyItem(at: siblingURL, to: resourcesDestinationURL)
             try fileManager.copyItem(at: siblingURL, to: appRootDestinationURL)
         }
+    }
+
+    private func copyBootstrapConfiguration(from sourceURL: URL?, to resourcesURL: URL, appBundleURL: URL) throws {
+        guard let sourceURL else {
+            return
+        }
+
+        var destinationRoots = [resourcesURL]
+        destinationRoots.append(contentsOf: try resourceBundleURLs(in: resourcesURL))
+        destinationRoots.append(contentsOf: try resourceBundleURLs(in: appBundleURL))
+
+        for rootURL in destinationRoots {
+            let localDirectoryURL = fileURL(appending: ".local", to: rootURL, isDirectory: true)
+            let destinationURL = fileURL(appending: "tuzi-config.json", to: localDirectoryURL, isDirectory: false)
+
+            try fileManager.createDirectory(at: localDirectoryURL, withIntermediateDirectories: true)
+            try fileManager.copyItem(at: sourceURL, to: destinationURL)
+        }
+    }
+
+    private func resourceBundleURLs(in directoryURL: URL) throws -> [URL] {
+        guard fileManager.fileExists(atPath: directoryURL.path(percentEncoded: false)) else {
+            return []
+        }
+
+        return try fileManager.contentsOfDirectory(
+            at: directoryURL,
+            includingPropertiesForKeys: nil
+        ).filter { $0.pathExtension == "bundle" }
     }
 
     private func fileURL(appending component: String, to baseURL: URL, isDirectory: Bool) -> URL {

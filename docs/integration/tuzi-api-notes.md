@@ -34,9 +34,10 @@ Observed behavior:
 - Accepts Claude-style payloads with:
   - `model`
   - `messages`
-  - `max_tokens`
+  - `max_tokens` optional
   - `stream`
 - A verified request to `claude-opus-4-7` returned a valid assistant message
+- MCP OpenAPI checked on 2026-04-26 lists only `model` and `messages` as required; the app omits `max_tokens` so it does not impose its own 1024-token output cap
 
 Observed response shape:
 

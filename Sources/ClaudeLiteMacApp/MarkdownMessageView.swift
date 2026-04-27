@@ -24,6 +24,7 @@ private struct MarkdownWebView: NSViewRepresentable {
     func makeNSView(context: Context) -> AutoSizingWebView {
         let configuration = WKWebViewConfiguration()
         let userContentController = WKUserContentController()
+        userContentController.addUserScript(Coordinator.heightObserverUserScript)
         userContentController.add(context.coordinator, name: Coordinator.heightMessageName)
         configuration.userContentController = userContentController
         configuration.websiteDataStore = .nonPersistent()
@@ -49,22 +50,120 @@ private struct MarkdownWebView: NSViewRepresentable {
     static func dismantleNSView(_ nsView: AutoSizingWebView, coordinator: Coordinator) {
         nsView.navigationDelegate = nil
         nsView.onResize = nil
+        nsView.configuration.userContentController.removeAllUserScripts()
         nsView.configuration.userContentController.removeScriptMessageHandler(forName: Coordinator.heightMessageName)
     }
 
     final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         static let heightMessageName = "contentHeight"
-        private static let heightMeasurementScript = """
-        Math.max(
-            document.getElementById('content')?.getBoundingClientRect().height ?? 0,
-            document.body.scrollHeight,
-            document.documentElement.scrollHeight
+        static let heightObserverUserScript = WKUserScript(
+            source: """
+            (() => {
+              if (window.__claudeLiteHeightObserverInstalled) {
+                window.__claudeLiteScheduleHeightReport?.();
+                return;
+              }
+
+              window.__claudeLiteHeightObserverInstalled = true;
+              let lastHeight = 0;
+              let pending = false;
+
+              function measuredHeight() {
+                const content = document.getElementById('content');
+                return Math.ceil(Math.max(
+                  content?.getBoundingClientRect().height ?? 0,
+                  document.body?.scrollHeight ?? 0,
+                  document.documentElement?.scrollHeight ?? 0
+                ));
+              }
+
+              function postHeight() {
+                const height = measuredHeight();
+                if (!Number.isFinite(height) || height <= 0 || Math.abs(height - lastHeight) <= 0.5) {
+                  return;
+                }
+
+                lastHeight = height;
+                if (window.webkit?.messageHandlers?.contentHeight) {
+                  window.webkit.messageHandlers.contentHeight.postMessage(height);
+                }
+              }
+
+              function flushHeightReport() {
+                if (!pending) {
+                  return;
+                }
+
+                pending = false;
+                postHeight();
+              }
+
+              function scheduleHeightReport() {
+                if (pending) {
+                  return;
+                }
+
+                pending = true;
+                requestAnimationFrame(() => {
+                  requestAnimationFrame(flushHeightReport);
+                });
+                setTimeout(flushHeightReport, 50);
+              }
+
+              function installObservers() {
+                const content = document.getElementById('content');
+                const targets = [content, document.body, document.documentElement].filter(Boolean);
+
+                if (window.ResizeObserver) {
+                  const resizeObserver = new ResizeObserver(scheduleHeightReport);
+                  targets.forEach((target) => resizeObserver.observe(target));
+                  window.__claudeLiteHeightResizeObserver = resizeObserver;
+                }
+
+                if (content && window.MutationObserver) {
+                  const mutationObserver = new MutationObserver(scheduleHeightReport);
+                  mutationObserver.observe(content, {
+                    attributes: true,
+                    characterData: true,
+                    childList: true,
+                    subtree: true
+                  });
+                  window.__claudeLiteHeightMutationObserver = mutationObserver;
+                }
+
+                scheduleHeightReport();
+              }
+
+              window.__claudeLiteScheduleHeightReport = scheduleHeightReport;
+
+              if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', installObservers, { once: true });
+              } else {
+                installObservers();
+              }
+
+              window.addEventListener('load', scheduleHeightReport);
+              window.addEventListener('resize', scheduleHeightReport);
+              document.fonts?.ready?.then(scheduleHeightReport, () => {});
+              window.MathJax?.startup?.promise?.then(scheduleHeightReport, () => {});
+            })();
+            """,
+            injectionTime: .atDocumentEnd,
+            forMainFrameOnly: true
         )
+        private static let heightMeasurementScript = """
+        Math.ceil(Math.max(
+            document.getElementById('content')?.getBoundingClientRect().height ?? 0,
+            document.body?.scrollHeight ?? 0,
+            document.documentElement?.scrollHeight ?? 0
+        ))
         """
 
         @Binding private var contentHeight: CGFloat
         private weak var webView: AutoSizingWebView?
-        private var lastHTML: String?
+        private var lastMarkdown: String?
+        private var pendingHeightMeasurement = false
+        private var lastResolvedHeight: CGFloat = 24
 
         init(contentHeight: Binding<CGFloat>) {
             _contentHeight = contentHeight
@@ -75,19 +174,31 @@ private struct MarkdownWebView: NSViewRepresentable {
         }
 
         func load(markdown: String) {
-            let html = MarkdownHTMLDocument.makeHTML(for: markdown)
-            guard html != lastHTML else {
+            guard markdown != lastMarkdown else {
                 requestHeightUpdate()
                 return
             }
 
-            lastHTML = html
+            lastMarkdown = markdown
+            let html = MarkdownHTMLDocument.makeHTML(for: markdown)
             webView?.loadHTMLString(html, baseURL: nil)
         }
 
         func requestHeightUpdate() {
-            webView?.evaluateJavaScript("window.dispatchEvent(new Event('resize'));", completionHandler: nil)
-            measureContentHeight()
+            guard !pendingHeightMeasurement else {
+                return
+            }
+
+            pendingHeightMeasurement = true
+            DispatchQueue.main.async { [weak self] in
+                guard let self else {
+                    return
+                }
+
+                self.pendingHeightMeasurement = false
+                self.webView?.evaluateJavaScript("window.__claudeLiteScheduleHeightReport?.();", completionHandler: nil)
+                self.measureContentHeight()
+            }
         }
 
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
@@ -120,13 +231,7 @@ private struct MarkdownWebView: NSViewRepresentable {
         }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-            measureContentHeight()
-
-            for delay in [0.05, 0.2, 0.5] {
-                DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-                    self?.measureContentHeight()
-                }
-            }
+            requestHeightUpdate()
         }
 
         private func measureContentHeight() {
@@ -143,10 +248,14 @@ private struct MarkdownWebView: NSViewRepresentable {
         }
 
         private func updateContentHeight(_ resolvedHeight: CGFloat) {
-            if abs(resolvedHeight - contentHeight) > 0.5 {
-                DispatchQueue.main.async {
-                    self.contentHeight = resolvedHeight
-                }
+            let resolvedHeight = max(resolvedHeight.rounded(.up), 24)
+            guard abs(resolvedHeight - lastResolvedHeight) > 0.5 || abs(resolvedHeight - contentHeight) > 0.5 else {
+                return
+            }
+
+            lastResolvedHeight = resolvedHeight
+            DispatchQueue.main.async { [weak self] in
+                self?.contentHeight = resolvedHeight
             }
         }
     }
@@ -156,7 +265,10 @@ private final class AutoSizingWebView: WKWebView {
     var onResize: (() -> Void)?
 
     override func setFrameSize(_ newSize: NSSize) {
+        let oldWidth = frame.width
         super.setFrameSize(newSize)
-        onResize?()
+        if abs(newSize.width - oldWidth) > 0.5 {
+            onResize?()
+        }
     }
 }

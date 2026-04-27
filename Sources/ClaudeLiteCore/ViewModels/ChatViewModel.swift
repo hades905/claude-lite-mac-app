@@ -43,7 +43,7 @@ public final class ChatViewModel {
                 storedSelection: snapshot.selectedModelID,
                 bootstrapDefault: bootstrapConfiguration?.defaultModel
             )
-            connectionStatus = await services.connectionService.checkConnection(apiKey: apiKey)
+            connectionStatus = .connected
         } else {
             availableModels = []
             selectedModel = nil
@@ -95,6 +95,10 @@ public final class ChatViewModel {
     }
 
     public func send() async throws {
+        guard !isSending else {
+            return
+        }
+
         let trimmed = draftText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty || !draftAttachments.isEmpty else {
             return
@@ -114,7 +118,7 @@ public final class ChatViewModel {
 
         errorMessage = nil
         let outgoing = ChatMessage.user(text: trimmed, attachments: draftAttachments)
-        let conversation = messages + [outgoing]
+        let conversation = messages.filter { $0.status != .pending } + [outgoing]
         let pendingReplyID = UUID()
         let pendingReply = ChatMessage.assistant(
             id: pendingReplyID,

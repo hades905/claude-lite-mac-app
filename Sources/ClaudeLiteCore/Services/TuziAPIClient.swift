@@ -33,7 +33,7 @@ public final class TuziAPIClient: Sendable {
 
         let body = MessageRequest(
             model: modelID,
-            maxTokens: 1024,
+            maxTokens: nil,
             messages: conversation.map {
                 MessageRequest.MessagePayload(
                     role: $0.role.rawValue,
@@ -89,7 +89,7 @@ private struct ModelsResponse: Decodable {
 
 private struct MessageRequest: Encodable {
     let model: String
-    let maxTokens: Int
+    let maxTokens: Int?
     let messages: [MessagePayload]
     let stream: Bool
 
