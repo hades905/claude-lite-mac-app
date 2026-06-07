@@ -1,0 +1,67 @@
+import Foundation
+import Testing
+@testable import ClaudeLiteCore
+
+struct RotatingAppLoggerTests {
+    @Test
+    func loggerRedactsSensitiveValuesAndMessageText() throws {
+        let directory = try TestSupport.makeTemporaryDirectory()
+        let logger = RotatingAppLogger(
+            directoryURL: directory,
+            fileName: "app.log",
+            maxFileBytes: 4_096,
+            maxTotalBytes: 8_192
+        )
+
+        try logger.record(
+            event: "send_failed",
+            metadata: [
+                "apiKey": "secret-model-key",
+                "prompt": "this is a private question",
+                "messageCount": "3"
+            ]
+        )
+
+        let log = try String(contentsOf: directory.appending(path: "app.log"), encoding: .utf8)
+
+        #expect(log.contains("send_failed"))
+        #expect(log.contains("messageCount=3"))
+        #expect(log.contains("apiKey=<redacted>"))
+        #expect(log.contains("prompt=<redacted>"))
+        #expect(!log.contains("secret-model-key"))
+        #expect(!log.contains("this is a private question"))
+    }
+
+    @Test
+    func loggerKeepsTotalSizeUnderLimit() throws {
+        let directory = try TestSupport.makeTemporaryDirectory()
+        let logger = RotatingAppLogger(
+            directoryURL: directory,
+            fileName: "app.log",
+            maxFileBytes: 256,
+            maxTotalBytes: 768
+        )
+
+        for index in 0..<80 {
+            try logger.record(
+                event: "heartbeat",
+                metadata: [
+                    "index": "\(index)",
+                    "payload": String(repeating: "x", count: 80)
+                ]
+            )
+        }
+
+        let files = try FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: [.fileSizeKey]
+        )
+        let totalBytes = try files.reduce(0) { partial, url in
+            let values = try url.resourceValues(forKeys: [.fileSizeKey])
+            return partial + (values.fileSize ?? 0)
+        }
+
+        #expect(totalBytes <= 768)
+        #expect(files.contains { $0.lastPathComponent == "app.log" })
+    }
+}

@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 public struct LiveServiceContainer: ClaudeLiteServiceContainer {
     public let bootstrapLoader: BootstrapConfigurationLoading
@@ -7,6 +8,7 @@ public struct LiveServiceContainer: ClaudeLiteServiceContainer {
     public let modelService: ModelServing
     public let connectionService: ConnectionServing
     public let chatService: ChatServing
+    public let logger: AppLogging
 
     public init(
         bootstrapLoader: BootstrapConfigurationLoading,
@@ -14,7 +16,8 @@ public struct LiveServiceContainer: ClaudeLiteServiceContainer {
         sessionStore: SessionStoring,
         modelService: ModelServing,
         connectionService: ConnectionServing,
-        chatService: ChatServing
+        chatService: ChatServing,
+        logger: AppLogging
     ) {
         self.bootstrapLoader = bootstrapLoader
         self.secureStore = secureStore
@@ -22,6 +25,7 @@ public struct LiveServiceContainer: ClaudeLiteServiceContainer {
         self.modelService = modelService
         self.connectionService = connectionService
         self.chatService = chatService
+        self.logger = logger
     }
 
     public static func live() -> LiveServiceContainer {
@@ -30,10 +34,15 @@ public struct LiveServiceContainer: ClaudeLiteServiceContainer {
         let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
             .appending(path: "ClaudeLiteMacApp", directoryHint: .isDirectory)
         let sessionStore = PersistentSessionStore(fileURL: appSupport.appending(path: "session.json"))
+        let mainBundle = Bundle.main
         let bootstrapLoader = LocalBootstrapConfigurationLoader(
             searchRoots: defaultBootstrapSearchRoots(
                 currentDirectory: currentDirectory,
-                bundleURL: Bundle.main.bundleURL
+                bundleURL: mainBundle.bundleURL,
+                resourceURL: mainBundle.resourceURL,
+                executableURL: currentExecutableURL(),
+                moduleResourceURL: Bundle.module.resourceURL,
+                appSupportURL: appSupport
             )
         )
         let secureStore = NoopSecureStore()
@@ -41,6 +50,7 @@ public struct LiveServiceContainer: ClaudeLiteServiceContainer {
         let modelService = LiveModelService(apiClient: apiClient)
         let connectionService = LiveConnectionService(apiClient: apiClient)
         let chatService = LiveChatService(apiClient: apiClient)
+        let logger = RotatingAppLogger(directoryURL: appSupport.appending(path: "Logs", directoryHint: .isDirectory))
 
         return LiveServiceContainer(
             bootstrapLoader: bootstrapLoader,
@@ -48,11 +58,32 @@ public struct LiveServiceContainer: ClaudeLiteServiceContainer {
             sessionStore: sessionStore,
             modelService: modelService,
             connectionService: connectionService,
-            chatService: chatService
+            chatService: chatService,
+            logger: logger
         )
     }
 
-    static func defaultBootstrapSearchRoots(currentDirectory: URL, bundleURL: URL) -> [URL] {
+    static func defaultBootstrapSearchRoots(
+        currentDirectory: URL,
+        bundleURL: URL,
+        resourceURL: URL? = nil,
+        executableURL: URL? = nil,
+        moduleResourceURL: URL? = nil,
+        appSupportURL: URL? = nil
+    ) -> [URL] {
+        if let appResourceURL = packagedAppResourceURL(
+            bundleURL: bundleURL,
+            resourceURL: resourceURL,
+            executableURL: executableURL,
+            moduleResourceURL: moduleResourceURL
+        ) {
+            if let appSupportURL {
+                return [appSupportURL, appResourceURL]
+            }
+
+            return [appResourceURL]
+        }
+
         var roots: [URL] = [currentDirectory]
         let bundleParent = bundleURL.deletingLastPathComponent()
         let bundleGrandparent = bundleParent.deletingLastPathComponent()
@@ -62,6 +93,66 @@ public struct LiveServiceContainer: ClaudeLiteServiceContainer {
         }
 
         return roots
+    }
+
+    private static func packagedAppResourceURL(
+        bundleURL: URL,
+        resourceURL: URL?,
+        executableURL: URL?,
+        moduleResourceURL: URL?
+    ) -> URL? {
+        if let moduleResourceURL, isInsideAppBundle(moduleResourceURL) {
+            return moduleResourceURL
+        }
+
+        if let resourceURL, isInsideAppBundle(resourceURL) {
+            return resourceURL
+        }
+
+        if isInsideAppBundle(bundleURL), let resourceURL {
+            return resourceURL
+        }
+
+        guard let executableURL else {
+            return nil
+        }
+
+        return resourceURLFromPackagedExecutable(executableURL)
+    }
+
+    private static func resourceURLFromPackagedExecutable(_ executableURL: URL) -> URL? {
+        let components = executableURL.standardizedFileURL.pathComponents
+        guard
+            let appIndex = components.lastIndex(where: { $0.hasSuffix(".app") }),
+            components.indices.contains(appIndex + 2),
+            components[appIndex + 1] == "Contents",
+            components[appIndex + 2] == "MacOS"
+        else {
+            return nil
+        }
+
+        let appPath = NSString.path(withComponents: Array(components[...appIndex]))
+        return URL(fileURLWithPath: appPath, isDirectory: true)
+            .appendingPathComponent("Contents/Resources", isDirectory: true)
+    }
+
+    private static func isInsideAppBundle(_ url: URL) -> Bool {
+        url.pathComponents.contains { $0.hasSuffix(".app") }
+    }
+
+    private static func currentExecutableURL() -> URL? {
+        var size: UInt32 = 0
+        _ = _NSGetExecutablePath(nil, &size)
+
+        var buffer = [CChar](repeating: 0, count: Int(size))
+        guard _NSGetExecutablePath(&buffer, &size) == 0 else {
+            return nil
+        }
+
+        let endIndex = buffer.firstIndex(of: 0) ?? buffer.endIndex
+        let bytes = buffer[..<endIndex].map { UInt8(bitPattern: $0) }
+        let path = String(decoding: bytes, as: UTF8.self)
+        return URL(fileURLWithPath: path).standardizedFileURL
     }
 }
 
@@ -73,7 +164,7 @@ public struct LiveModelService: ModelServing {
     }
 
     public func fetchClaudeModels(apiKey: String) async throws -> [ClaudeModel] {
-        ModelCatalog.claudeOnly(from: try await apiClient.fetchModels(apiKey: apiKey))
+        ModelCatalog.coreClaudeModels(from: try await apiClient.fetchModels(apiKey: apiKey))
     }
 }
 

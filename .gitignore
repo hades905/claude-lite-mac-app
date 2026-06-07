@@ -17,7 +17,13 @@ DerivedData/
 *.mobileprovision
 
 .tmp-home/
-.superpowers/
-
 .build-support/
 dist/
+releases/
+.superpowers/
+
+bug报告.txt
+*.crash
+*.ips
+*.hang
+*.spin

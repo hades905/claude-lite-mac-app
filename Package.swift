@@ -16,9 +16,16 @@ let package = Package(
             targets: ["ClaudeLiteMacApp"]
         ),
         .executable(
+            name: "ClaudeLiteSmoke",
+            targets: ["ClaudeLiteSmoke"]
+        ),
+        .executable(
             name: "ClaudeLitePackager",
             targets: ["ClaudeLitePackager"]
         )
+    ],
+    dependencies: [
+        .package(url: "https://github.com/swiftlang/swift-testing.git", exact: "6.2.1")
     ],
     targets: [
         .target(
@@ -34,9 +41,31 @@ let package = Package(
             path: "Sources/ClaudeLiteMacApp"
         ),
         .executableTarget(
+            name: "ClaudeLiteSmoke",
+            dependencies: ["ClaudeLiteCore"],
+            path: "Sources/ClaudeLiteSmoke"
+        ),
+        .executableTarget(
             name: "ClaudeLitePackager",
             dependencies: ["ClaudeLiteCore"],
             path: "Sources/ClaudeLitePackager"
+        ),
+        .testTarget(
+            name: "ClaudeLiteCoreTests",
+            dependencies: [
+                "ClaudeLiteCore",
+                .product(name: "Testing", package: "swift-testing")
+            ],
+            path: "Tests/ClaudeLiteCoreTests"
+        ),
+        .testTarget(
+            name: "ClaudeLiteMacAppTests",
+            dependencies: [
+                "ClaudeLiteMacApp",
+                "ClaudeLiteCore",
+                .product(name: "Testing", package: "swift-testing")
+            ],
+            path: "Tests/ClaudeLiteMacAppTests"
         )
     ]
 )

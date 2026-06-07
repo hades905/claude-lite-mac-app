@@ -39,4 +39,5 @@ public protocol ClaudeLiteServiceContainer: Sendable {
     var modelService: ModelServing { get }
     var connectionService: ConnectionServing { get }
     var chatService: ChatServing { get }
+    var logger: AppLogging { get }
 }

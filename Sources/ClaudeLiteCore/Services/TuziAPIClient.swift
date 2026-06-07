@@ -33,11 +33,11 @@ public final class TuziAPIClient: Sendable {
 
         let body = MessageRequest(
             model: modelID,
-            maxTokens: 1024,
-            messages: conversation.map {
+            maxTokens: nil,
+            messages: try conversation.map {
                 MessageRequest.MessagePayload(
                     role: $0.role.rawValue,
-                    content: AttachmentPromptAdapter.renderMessageText(for: $0)
+                    content: try AttachmentPromptAdapter.renderMessageContent(for: $0)
                 )
             },
             stream: false
@@ -89,7 +89,7 @@ private struct ModelsResponse: Decodable {
 
 private struct MessageRequest: Encodable {
     let model: String
-    let maxTokens: Int
+    let maxTokens: Int?
     let messages: [MessagePayload]
     let stream: Bool
 
@@ -102,7 +102,7 @@ private struct MessageRequest: Encodable {
 
     struct MessagePayload: Encodable {
         let role: String
-        let content: String
+        let content: AttachmentPromptAdapter.MessageContent
     }
 }
 

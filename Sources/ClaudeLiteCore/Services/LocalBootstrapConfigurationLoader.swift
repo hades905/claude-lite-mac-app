@@ -10,7 +10,7 @@ public struct LocalBootstrapConfigurationLoader: BootstrapConfigurationLoading {
     public func loadBootstrapConfiguration() throws -> BootstrapConfiguration? {
         for root in searchRoots {
             let fileURL = root.appending(path: ".local/tuzi-config.json")
-            if FileManager.default.fileExists(atPath: fileURL.path()) {
+            if FileManager.default.fileExists(atPath: fileURL.path(percentEncoded: false)) {
                 return try BootstrapConfiguration.load(from: fileURL)
             }
         }

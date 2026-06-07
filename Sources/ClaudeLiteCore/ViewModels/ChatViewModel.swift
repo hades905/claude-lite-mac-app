@@ -15,6 +15,9 @@ public final class ChatViewModel {
     public private(set) var errorMessage: String?
     public var draftText = ""
     public private(set) var draftAttachments: [ChatAttachment] = []
+    public var availableModelSections: [ClaudeModelSection] {
+        ModelCatalog.coreClaudeSections(from: availableModels)
+    }
 
     private let services: any ClaudeLiteServiceContainer
     private var bootstrapConfiguration: BootstrapConfiguration?
@@ -26,6 +29,7 @@ public final class ChatViewModel {
     public func start() async throws {
         isStarting = true
         defer { isStarting = false }
+        log(event: "start_begin")
 
         bootstrapConfiguration = try services.bootstrapLoader.loadBootstrapConfiguration()
 
@@ -43,11 +47,19 @@ public final class ChatViewModel {
                 storedSelection: snapshot.selectedModelID,
                 bootstrapDefault: bootstrapConfiguration?.defaultModel
             )
-            connectionStatus = await services.connectionService.checkConnection(apiKey: apiKey)
+            connectionStatus = .connected
+            log(
+                event: "start_connected",
+                metadata: [
+                    "modelCount": "\(availableModels.count)",
+                    "messageCount": "\(messages.count)"
+                ]
+            )
         } else {
             availableModels = []
             selectedModel = nil
             connectionStatus = .authFailed
+            log(event: "start_auth_failed", metadata: ["messageCount": "\(messages.count)"])
         }
 
         try persistSnapshot()
@@ -58,6 +70,7 @@ public final class ChatViewModel {
             let apiKey = try resolvedModelAPIKey()
             connectionStatus = .checking
             connectionStatus = await services.connectionService.checkConnection(apiKey: apiKey)
+            log(event: "connection_checked", metadata: ["status": connectionStatus.rawValue])
 
             if let apiKey, connectionStatus == .connected {
                 availableModels = try await services.modelService.fetchClaudeModels(apiKey: apiKey)
@@ -72,6 +85,7 @@ public final class ChatViewModel {
         } catch {
             errorMessage = readableMessage(for: error)
             connectionStatus = .disconnected
+            log(event: "connection_failed", metadata: ["error": String(describing: type(of: error))])
         }
     }
 
@@ -95,6 +109,10 @@ public final class ChatViewModel {
     }
 
     public func send() async throws {
+        guard !isSending else {
+            return
+        }
+
         let trimmed = draftText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty || !draftAttachments.isEmpty else {
             return
@@ -113,8 +131,9 @@ public final class ChatViewModel {
         defer { isSending = false }
 
         errorMessage = nil
-        let outgoing = ChatMessage.user(text: trimmed, attachments: draftAttachments)
-        let conversation = messages + [outgoing]
+        let outgoingForRequest = ChatMessage.user(text: trimmed, attachments: draftAttachments)
+        let outgoing = outgoingForRequest.replacing(status: .pending)
+        let conversation = messages.filter { $0.status != .pending } + [outgoingForRequest]
         let pendingReplyID = UUID()
         let pendingReply = ChatMessage.assistant(
             id: pendingReplyID,
@@ -126,6 +145,14 @@ public final class ChatViewModel {
         draftText = ""
         draftAttachments = []
         try persistSnapshot()
+        log(
+            event: "send_started",
+            metadata: [
+                "model": selectedModel.id,
+                "messageCount": "\(conversation.count)",
+                "attachmentCount": "\(outgoingForRequest.attachments.count)"
+            ]
+        )
 
         do {
             let reply = try await services.chatService.sendMessage(
@@ -134,16 +161,41 @@ public final class ChatViewModel {
                 apiKey: apiKey
             )
             replaceMessage(
+                id: outgoing.id,
+                with: outgoingForRequest.replacing(status: .sent)
+            )
+            replaceMessage(
                 id: pendingReplyID,
                 with: reply.replacing(id: pendingReplyID, status: .sent)
             )
             connectionStatus = .connected
             try persistSnapshot()
+            log(
+                event: "send_succeeded",
+                metadata: [
+                    "model": selectedModel.id,
+                    "messageCount": "\(conversation.count)",
+                    "attachmentCount": "\(outgoingForRequest.attachments.count)"
+                ]
+            )
         } catch {
+            replaceMessage(
+                id: outgoing.id,
+                with: outgoingForRequest.replacing(status: .sent)
+            )
             messages.removeAll { $0.id == pendingReplyID }
             errorMessage = readableMessage(for: error)
             connectionStatus = .disconnected
             try persistSnapshot()
+            log(
+                event: "send_failed",
+                metadata: [
+                    "model": selectedModel.id,
+                    "messageCount": "\(conversation.count)",
+                    "attachmentCount": "\(outgoingForRequest.attachments.count)",
+                    "error": String(describing: type(of: error))
+                ]
+            )
             throw error
         }
     }
@@ -154,11 +206,21 @@ public final class ChatViewModel {
 
     private func persistSnapshot() throws {
         let snapshot = SessionSnapshot(
-            messages: messages.filter { $0.status != .pending },
+            messages: messages.compactMap { message in
+                if message.role == .assistant, message.status == .pending {
+                    return nil
+                }
+
+                if message.role == .user, message.status == .pending {
+                    return message.replacing(status: .sent)
+                }
+
+                return message
+            },
             selectedModelID: selectedModel?.id,
             lastConnectionStatus: connectionStatus
         )
-        try services.sessionStore.save(snapshot)
+        try services.sessionStore.save(SessionSnapshotTrimmer.trim(snapshot))
     }
 
     private func replaceMessage(id: UUID, with updated: ChatMessage) {
@@ -181,6 +243,10 @@ public final class ChatViewModel {
         default:
             "Can’t reach server."
         }
+    }
+
+    private func log(event: String, metadata: [String: String] = [:]) {
+        try? services.logger.record(event: event, metadata: metadata)
     }
 }
 
