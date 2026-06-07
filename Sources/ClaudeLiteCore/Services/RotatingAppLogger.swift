@@ -73,7 +73,7 @@ public final class RotatingAppLogger: AppLogging, @unchecked Sendable {
             return "<redacted>"
         }
 
-        return redactSensitiveTokens(in: sanitize(value))
+        return redactSensitiveTokens(in: redactLocalPaths(in: sanitize(value)))
     }
 
     private func sanitize(_ value: String) -> String {
@@ -94,6 +94,24 @@ public final class RotatingAppLogger: AppLogging, @unchecked Sendable {
             redacted = redacted.replacingOccurrences(
                 of: pattern,
                 with: "<redacted>",
+                options: .regularExpression
+            )
+        }
+
+        return redacted
+    }
+
+    private func redactLocalPaths(in value: String) -> String {
+        var redacted = value
+        let patterns = [
+            #"file:///Users/[^\s]+"#,
+            #"/Users/[^\s]+"#
+        ]
+
+        for pattern in patterns {
+            redacted = redacted.replacingOccurrences(
+                of: pattern,
+                with: "<local-path>",
                 options: .regularExpression
             )
         }

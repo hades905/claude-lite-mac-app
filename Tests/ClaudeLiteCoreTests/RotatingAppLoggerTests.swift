@@ -60,6 +60,32 @@ struct RotatingAppLoggerTests {
     }
 
     @Test
+    func loggerRedactsLocalPathsInsideSafeMetadataValues() throws {
+        let directory = try TestSupport.makeTemporaryDirectory()
+        let logger = RotatingAppLogger(
+            directoryURL: directory,
+            fileName: "app.log",
+            maxFileBytes: 4_096,
+            maxTotalBytes: 8_192
+        )
+
+        try logger.record(
+            event: "file_failed",
+            metadata: [
+                "error": "failed to read /Users/hadesz/Documents/private-plan.txt and file:///Users/hadesz/Pictures/private-photo.png"
+            ]
+        )
+
+        let log = try String(contentsOf: directory.appending(path: "app.log"), encoding: .utf8)
+
+        #expect(log.contains("file_failed"))
+        #expect(log.contains("error=failed to read <local-path> and <local-path>"))
+        #expect(!log.contains("/Users/hadesz"))
+        #expect(!log.contains("private-plan.txt"))
+        #expect(!log.contains("private-photo.png"))
+    }
+
+    @Test
     func loggerKeepsTotalSizeUnderLimit() throws {
         let directory = try TestSupport.makeTemporaryDirectory()
         let logger = RotatingAppLogger(
