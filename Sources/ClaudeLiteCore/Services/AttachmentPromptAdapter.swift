@@ -122,7 +122,7 @@ enum AttachmentPromptAdapter {
             return """
             [File attached: \(safeName)]
             <file>
-            \(text)
+            \(escapedFileBlockText(text))
             </file>
             """
         }
@@ -141,6 +141,13 @@ enum AttachmentPromptAdapter {
         )
         let trimmed = collapsed.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? "attachment" : trimmed
+    }
+
+    private static func escapedFileBlockText(_ text: String) -> String {
+        text
+            .replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
     }
 
     private static func inlineableTextFileURL(for url: URL) -> URL? {
