@@ -110,6 +110,38 @@ struct ChatViewModelTests {
     }
 
     @Test
+    func sendRecordsAttachmentKindCountsWithoutAttachmentNames() async throws {
+        let services = TestServiceContainer(
+            availableModels: [
+                ClaudeModel(id: "claude-opus-4-7", displayName: "Claude Opus 4.7")
+            ],
+            replyText: "ok"
+        )
+        let viewModel = ChatViewModel(services: services)
+
+        try await viewModel.start()
+        viewModel.draftText = "private prompt with attachments"
+        viewModel.addAttachment(
+            from: URL(fileURLWithPath: "/private/path/secret-plan.txt")
+        )
+        viewModel.addAttachment(
+            from: URL(fileURLWithPath: "/private/path/private-photo.png")
+        )
+
+        try await viewModel.send()
+
+        let succeededEntry = try #require(services.logEntries.last { $0.event == "send_succeeded" })
+        #expect(succeededEntry.metadata["attachmentCount"] == "2")
+        #expect(succeededEntry.metadata["fileAttachmentCount"] == "1")
+        #expect(succeededEntry.metadata["imageAttachmentCount"] == "1")
+        #expect(!services.logEntries.contains { entry in
+            entry.metadata.values.contains("private prompt with attachments") ||
+                entry.metadata.values.contains("secret-plan.txt") ||
+                entry.metadata.values.contains("private-photo.png")
+        })
+    }
+
+    @Test
     func startRecordsDurationDiagnosticsWithoutSecrets() async throws {
         let services = TestServiceContainer(
             availableModels: [

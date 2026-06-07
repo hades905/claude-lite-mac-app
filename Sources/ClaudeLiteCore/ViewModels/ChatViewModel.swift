@@ -150,11 +150,11 @@ public final class ChatViewModel {
         let sendStartedAt = Date()
         log(
             event: "send_started",
-            metadata: [
-                "model": selectedModel.id,
-                "messageCount": "\(conversation.count)",
-                "attachmentCount": "\(outgoingForRequest.attachments.count)"
-            ]
+            metadata: sendMetadata(
+                modelID: selectedModel.id,
+                messageCount: conversation.count,
+                attachments: outgoingForRequest.attachments
+            )
         )
 
         do {
@@ -175,12 +175,12 @@ public final class ChatViewModel {
             try persistSnapshot()
             log(
                 event: "send_succeeded",
-                metadata: [
-                    "durationMs": elapsedMilliseconds(since: sendStartedAt),
-                    "model": selectedModel.id,
-                    "messageCount": "\(conversation.count)",
-                    "attachmentCount": "\(outgoingForRequest.attachments.count)"
-                ]
+                metadata: sendMetadata(
+                    modelID: selectedModel.id,
+                    messageCount: conversation.count,
+                    attachments: outgoingForRequest.attachments,
+                    durationMs: elapsedMilliseconds(since: sendStartedAt)
+                )
             )
         } catch {
             replaceMessage(
@@ -195,13 +195,13 @@ public final class ChatViewModel {
             try persistSnapshot()
             log(
                 event: "send_failed",
-                metadata: [
-                    "durationMs": elapsedMilliseconds(since: sendStartedAt),
-                    "model": selectedModel.id,
-                    "messageCount": "\(conversation.count)",
-                    "attachmentCount": "\(outgoingForRequest.attachments.count)",
-                    "error": String(describing: type(of: error))
-                ]
+                metadata: sendMetadata(
+                    modelID: selectedModel.id,
+                    messageCount: conversation.count,
+                    attachments: outgoingForRequest.attachments,
+                    durationMs: elapsedMilliseconds(since: sendStartedAt),
+                    error: String(describing: type(of: error))
+                )
             )
             throw error
         }
@@ -269,6 +269,32 @@ public final class ChatViewModel {
 
     private func log(event: String, metadata: [String: String] = [:]) {
         try? services.logger.record(event: event, metadata: metadata)
+    }
+
+    private func sendMetadata(
+        modelID: String,
+        messageCount: Int,
+        attachments: [ChatAttachment],
+        durationMs: String? = nil,
+        error: String? = nil
+    ) -> [String: String] {
+        var metadata = [
+            "model": modelID,
+            "messageCount": "\(messageCount)",
+            "attachmentCount": "\(attachments.count)",
+            "fileAttachmentCount": "\(attachments.filter { $0.kind == .file }.count)",
+            "imageAttachmentCount": "\(attachments.filter { $0.kind == .image }.count)"
+        ]
+
+        if let durationMs {
+            metadata["durationMs"] = durationMs
+        }
+
+        if let error {
+            metadata["error"] = error
+        }
+
+        return metadata
     }
 
     private func logStartCompleted(startedAt: Date) {
