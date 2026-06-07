@@ -125,4 +125,19 @@ struct PersistentSessionStoreTests {
         #expect(restored == .empty)
         #expect(!FileManager.default.fileExists(atPath: fileURL.path(percentEncoded: false)))
     }
+
+    @Test
+    func oversizedSessionLoadsEmptySnapshotAndClearsLargeFile() throws {
+        let directory = try TestSupport.makeTemporaryDirectory()
+        let fileURL = directory.appending(path: "session.json")
+        let store = PersistentSessionStore(fileURL: fileURL)
+
+        let oversizedData = Data(repeating: UInt8(ascii: "x"), count: PersistentSessionStore.defaultMaxSessionFileBytes + 1)
+        try oversizedData.write(to: fileURL)
+
+        let restored = try store.load()
+
+        #expect(restored == .empty)
+        #expect(!FileManager.default.fileExists(atPath: fileURL.path(percentEncoded: false)))
+    }
 }
