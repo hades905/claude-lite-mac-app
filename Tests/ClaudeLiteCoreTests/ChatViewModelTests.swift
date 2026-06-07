@@ -275,6 +275,41 @@ struct ChatViewModelTests {
     }
 
     @Test
+    func sendWithoutModelAPIKeyShowsReadableErrorAndSafeDiagnostics() async throws {
+        let services = TestServiceContainer(
+            availableModels: [
+                ClaudeModel(id: "claude-opus-4-7", displayName: "Claude Opus 4.7")
+            ],
+            replyText: "ok",
+            bootstrapConfiguration: BootstrapConfiguration(
+                modelAPIKey: "",
+                userAPIKey: "private-user-key",
+                defaultModel: "claude-opus-4-7",
+                baseURL: URL(string: "https://api.tu-zi.com")!
+            )
+        )
+        let viewModel = ChatViewModel(services: services)
+
+        try await viewModel.start()
+        viewModel.draftText = "private prompt that should stay out of logs"
+
+        await #expect(throws: ChatViewModelError.missingAPIKey) {
+            try await viewModel.send()
+        }
+
+        #expect(viewModel.connectionStatus == ConnectionStatus.authFailed)
+        #expect(viewModel.errorMessage == "Key not accepted.")
+        #expect(services.logEntries.contains { entry in
+            entry.event == "send_failed" &&
+                entry.metadata["reason"] == "missingAPIKey"
+        })
+        #expect(!services.logEntries.contains { entry in
+            entry.metadata.values.contains("private prompt that should stay out of logs") ||
+                entry.metadata.values.contains("private-user-key")
+        })
+    }
+
+    @Test
     func sendShowsPendingAssistantMessageUntilReplyArrives() async throws {
         let chatService = ControlledChatService()
         let services = TestServiceContainer(

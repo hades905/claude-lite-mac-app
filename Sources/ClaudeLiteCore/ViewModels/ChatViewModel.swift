@@ -153,6 +153,8 @@ public final class ChatViewModel {
 
         guard let apiKey = try resolvedModelAPIKey(), !apiKey.isEmpty else {
             connectionStatus = .authFailed
+            errorMessage = readableMessage(for: ChatViewModelError.missingAPIKey)
+            log(event: "send_failed", metadata: ["reason": "missingAPIKey"])
             throw ChatViewModelError.missingAPIKey
         }
 
