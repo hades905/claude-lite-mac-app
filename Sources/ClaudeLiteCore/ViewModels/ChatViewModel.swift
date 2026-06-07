@@ -27,6 +27,7 @@ public final class ChatViewModel {
     }
 
     public func start() async throws {
+        let startedAt = Date()
         isStarting = true
         defer { isStarting = false }
         log(event: "start_begin")
@@ -63,6 +64,7 @@ public final class ChatViewModel {
         }
 
         try persistSnapshot()
+        logStartCompleted(startedAt: startedAt)
     }
 
     public func refreshConnection() async {
@@ -264,6 +266,19 @@ public final class ChatViewModel {
 
     private func log(event: String, metadata: [String: String] = [:]) {
         try? services.logger.record(event: event, metadata: metadata)
+    }
+
+    private func logStartCompleted(startedAt: Date) {
+        let durationMs = max(0, Int(Date().timeIntervalSince(startedAt) * 1_000))
+        log(
+            event: "start_completed",
+            metadata: [
+                "durationMs": "\(durationMs)",
+                "messageCount": "\(messages.count)",
+                "modelCount": "\(availableModels.count)",
+                "status": connectionStatus.rawValue
+            ]
+        )
     }
 }
 

@@ -109,6 +109,35 @@ struct ChatViewModelTests {
     }
 
     @Test
+    func startRecordsDurationDiagnosticsWithoutSecrets() async throws {
+        let services = TestServiceContainer(
+            availableModels: [
+                ClaudeModel(id: "claude-opus-4-7", displayName: "Claude Opus 4.7")
+            ],
+            replyText: "ok",
+            bootstrapConfiguration: BootstrapConfiguration(
+                modelAPIKey: "private-model-key",
+                userAPIKey: "private-user-key",
+                defaultModel: "claude-opus-4-7",
+                baseURL: URL(string: "https://api.tu-zi.com")!
+            )
+        )
+        let viewModel = ChatViewModel(services: services)
+
+        try await viewModel.start()
+
+        let completedEntry = try #require(services.logEntries.last { $0.event == "start_completed" })
+        #expect(completedEntry.metadata["status"] == ConnectionStatus.connected.rawValue)
+        #expect(completedEntry.metadata["modelCount"] == "1")
+        #expect(completedEntry.metadata["messageCount"] == "0")
+        #expect(completedEntry.metadata["durationMs"] != nil)
+        #expect(!services.logEntries.contains { entry in
+            entry.metadata.values.contains("private-model-key") ||
+                entry.metadata.values.contains("private-user-key")
+        })
+    }
+
+    @Test
     func oversizedImageFailureShowsActionableErrorMessage() async throws {
         let chatService = FailingChatService(error: AttachmentPromptAdapterError.imageTooLarge("huge.png"))
         let services = TestServiceContainer(
