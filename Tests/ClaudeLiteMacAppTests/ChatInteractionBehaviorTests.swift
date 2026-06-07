@@ -8,6 +8,22 @@ import UniformTypeIdentifiers
 
 struct ChatInteractionBehaviorTests {
     @Test
+    func startupTaskDoesNotRefreshConnectionAfterStartFailure() throws {
+        let projectRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let sourceURL = projectRoot.appending(path: "Sources/ClaudeLiteMacApp/MainWindowView.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+        let taskStart = try #require(source.range(of: ".task {"))
+        let importerStart = try #require(source.range(of: ".fileImporter("))
+        let startupTask = String(source[taskStart.lowerBound..<importerStart.lowerBound])
+
+        #expect(startupTask.contains("try await viewModel.start()"))
+        #expect(!startupTask.contains("await viewModel.refreshConnection()"))
+    }
+
+    @Test
     func latestAssistantTargetSelectsMostRecentAssistantIncludingPendingReply() {
         let firstAssistantID = UUID()
         let latestAssistantID = UUID()

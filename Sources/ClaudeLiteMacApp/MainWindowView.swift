@@ -33,7 +33,7 @@ struct MainWindowView: View {
             do {
                 try await viewModel.start()
             } catch {
-                await viewModel.refreshConnection()
+                // ChatViewModel.start() keeps the startup failure visible and logs safe diagnostics.
             }
         }
         .fileImporter(
