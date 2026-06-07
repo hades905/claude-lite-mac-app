@@ -43,6 +43,23 @@ struct LauncherCommandTests {
     }
 
     @Test
+    func packageScriptCleansBuildCachesAfterPackaging() throws {
+        let projectRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let packageScriptURL = projectRoot.appendingPathComponent("scripts/package-app.sh")
+
+        let packageScript = try String(contentsOf: packageScriptURL, encoding: .utf8)
+
+        #expect(packageScript.contains("cleanup_build_cache()"))
+        #expect(packageScript.contains("trap cleanup_build_cache EXIT"))
+        #expect(packageScript.contains("rm -rf \"$ROOT_DIR/.build\""))
+        #expect(packageScript.contains("rm -rf \"$ROOT_DIR/.swiftpm\""))
+        #expect(packageScript.contains("rm -rf \"$ROOT_DIR/.build-support\""))
+    }
+
+    @Test
     func packageScriptDoesNotBundleLocalAPIKeysByDefault() throws {
         let projectRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()

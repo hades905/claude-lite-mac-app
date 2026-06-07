@@ -5,6 +5,14 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 ICON_PATH="$ROOT_DIR/Assets/AppIcon.icns"
 OUTPUT_DIR="$ROOT_DIR/dist"
 
+cleanup_build_cache() {
+  rm -rf "$ROOT_DIR/.build"
+  rm -rf "$ROOT_DIR/.build-support"
+  rm -rf "$ROOT_DIR/.swiftpm"
+}
+
+trap cleanup_build_cache EXIT
+
 cd "$ROOT_DIR"
 
 swift build -c release --product ClaudeLiteMacApp
