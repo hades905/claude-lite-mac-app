@@ -80,6 +80,7 @@ public final class ChatViewModel {
             connectionStatus = .checking
             connectionStatus = await services.connectionService.checkConnection(apiKey: apiKey)
             log(event: "connection_checked", metadata: ["status": connectionStatus.rawValue])
+            errorMessage = nil
 
             if let apiKey, connectionStatus == .connected {
                 availableModels = try await services.modelService.fetchClaudeModels(apiKey: apiKey)

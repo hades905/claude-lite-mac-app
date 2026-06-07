@@ -333,6 +333,30 @@ struct ChatViewModelTests {
     }
 
     @Test
+    func successfulConnectionRefreshClearsStaleErrorMessage() async throws {
+        let services = TestServiceContainer(
+            availableModels: [
+                ClaudeModel(id: "claude-opus-4-7", displayName: "Claude Opus 4.7")
+            ],
+            chatService: FailingChatService(error: TuziAPIError.server("temporary outage"))
+        )
+        let viewModel = ChatViewModel(services: services)
+
+        try await viewModel.start()
+        viewModel.draftText = "hello"
+
+        await #expect(throws: TuziAPIError.self) {
+            try await viewModel.send()
+        }
+        #expect(viewModel.errorMessage == "Can’t reach server.")
+
+        await viewModel.refreshConnection()
+
+        #expect(viewModel.connectionStatus == ConnectionStatus.connected)
+        #expect(viewModel.errorMessage == nil)
+    }
+
+    @Test
     func sendShowsPendingAssistantMessageUntilReplyArrives() async throws {
         let chatService = ControlledChatService()
         let services = TestServiceContainer(
