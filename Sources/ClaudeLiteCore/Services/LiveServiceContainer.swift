@@ -33,6 +33,7 @@ public struct LiveServiceContainer: ClaudeLiteServiceContainer {
         let currentDirectory = URL(fileURLWithPath: fileManager.currentDirectoryPath, isDirectory: true)
         let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
             .appending(path: "ClaudeLiteMacApp", directoryHint: .isDirectory)
+        try? AppSupportStoragePruner.prune(directoryURL: appSupport)
         let sessionStore = PersistentSessionStore(fileURL: appSupport.appending(path: "session.json"))
         let mainBundle = Bundle.main
         let bootstrapLoader = LocalBootstrapConfigurationLoader(
