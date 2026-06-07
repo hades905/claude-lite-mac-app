@@ -205,16 +205,76 @@ public enum MarkdownHTMLDocument {
               }, html);
             }
 
+            function sanitizeRenderedHTML(html) {
+              const container = document.createElement('div');
+              container.innerHTML = html;
+
+              const blockedTags = new Set([
+                'script',
+                'iframe',
+                'object',
+                'embed',
+                'form',
+                'input',
+                'button',
+                'textarea',
+                'select',
+                'option',
+                'meta',
+                'link',
+                'base',
+                'style'
+              ]);
+              const urlAttributes = new Set([
+                'href',
+                'src',
+                'xlink:href',
+                'formaction',
+                'action',
+                'poster',
+                'cite',
+                'background'
+              ]);
+              const blockedAttributes = new Set([
+                'style',
+                'srcset'
+              ]);
+              const blockedURLPattern = /^(?:javascript|data|vbscript|file):/i;
+
+              for (const element of Array.from(container.querySelectorAll('*'))) {
+                if (blockedTags.has(element.tagName.toLowerCase())) {
+                  element.remove();
+                  continue;
+                }
+
+                for (const attribute of Array.from(element.attributes)) {
+                  const name = attribute.name.toLowerCase();
+                  const value = attribute.value.replace(/[\\u0000-\\u001F\\u007F\\s]+/g, '');
+
+                  if (
+                    name.startsWith('on') ||
+                    blockedAttributes.has(name) ||
+                    (urlAttributes.has(name) && blockedURLPattern.test(value))
+                  ) {
+                    element.removeAttribute(attribute.name);
+                  }
+                }
+              }
+
+              return container.innerHTML;
+            }
+
             function renderMarkdown() {
               if (!window.marked?.parse) {
                 renderFallback();
                 return;
               }
 
-              article.innerHTML = restoreProtectedMath(window.marked.parse(markdownSource, {
+              const renderedHTML = window.marked.parse(markdownSource, {
                 gfm: true,
                 breaks: true
-              }));
+              });
+              article.innerHTML = sanitizeRenderedHTML(restoreProtectedMath(renderedHTML));
               article.className = '';
               reportHeight();
 

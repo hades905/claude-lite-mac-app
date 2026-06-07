@@ -126,6 +126,47 @@ struct MarkdownRenderSmokeTests {
         #expect(hasRenderedMath == true)
     }
 
+    @Test
+    func rendersMarkdownWithoutUnsafeHTMLOrScriptLinks() async throws {
+        let markdown = """
+        # Safe heading
+
+        <script>window.__unsafeScriptRan = true</script>
+        <img src="x" onerror="window.__unsafeImageRan = true">
+        <span style="background-image:url(https://example.com/pixel)">styled</span>
+        <img srcset="https://example.com/tracker.png 1x" alt="tracker">
+        [bad link](javascript:window.__unsafeLinkRan=true)
+        """
+        let html = MarkdownHTMLDocument.makeHTML(for: markdown)
+
+        let webView = WKWebView(frame: NSRect(x: 0, y: 0, width: 600, height: 400))
+        let delegate = NavigationDelegate()
+        webView.navigationDelegate = delegate
+        webView.loadHTMLString(html, baseURL: nil)
+        await delegate.waitForFinish()
+        try await waitForRenderCompletion(in: webView)
+
+        let scriptCount = try await javaScriptInt("document.querySelectorAll('#content script').length", in: webView)
+        let unsafeImageCount = try await javaScriptInt("document.querySelectorAll('#content img[onerror]').length", in: webView)
+        let javascriptLinkCount = try await javaScriptInt("document.querySelectorAll('#content a[href^=\"javascript:\"]').length", in: webView)
+        let inlineStyleCount = try await javaScriptInt("document.querySelectorAll('#content [style]').length", in: webView)
+        let srcsetCount = try await javaScriptInt("document.querySelectorAll('#content [srcset]').length", in: webView)
+        let unsafeScriptRan = try await javaScriptBool("window.__unsafeScriptRan === true", in: webView)
+        let unsafeImageRan = try await javaScriptBool("window.__unsafeImageRan === true", in: webView)
+        let unsafeLinkRan = try await javaScriptBool("window.__unsafeLinkRan === true", in: webView)
+        let heading = try await javaScriptString("document.querySelector('h1')?.textContent", in: webView)
+
+        #expect(heading == "Safe heading")
+        #expect(scriptCount == 0)
+        #expect(unsafeImageCount == 0)
+        #expect(javascriptLinkCount == 0)
+        #expect(inlineStyleCount == 0)
+        #expect(srcsetCount == 0)
+        #expect(unsafeScriptRan == false)
+        #expect(unsafeImageRan == false)
+        #expect(unsafeLinkRan == false)
+    }
+
     private func waitForRenderCompletion(in webView: WKWebView) async throws {
         for _ in 0..<50 {
             let isReady = try await javaScriptBool("window.__renderComplete === true", in: webView)
