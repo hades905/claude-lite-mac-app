@@ -55,4 +55,24 @@ struct LauncherCommandTests {
         #expect(!packageScript.contains(".local/tuzi-config.json"))
         #expect(!packageScript.contains("--bootstrap-config"))
     }
+
+    @Test
+    func releaseVerificationScriptRunsOfflineSmokeAndSafetyGates() throws {
+        let projectRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let scriptURL = projectRoot.appendingPathComponent("scripts/verify-release.sh")
+
+        let script = try String(contentsOf: scriptURL, encoding: .utf8)
+
+        #expect(FileManager.default.isExecutableFile(atPath: scriptURL.path))
+        #expect(script.contains("swift run ClaudeLiteSmoke"))
+        #expect(script.contains("swift test"))
+        #expect(script.contains("scripts/package-app.sh"))
+        #expect(script.contains("MAX_APP_BYTES=$((100 * 1024 * 1024))"))
+        #expect(script.contains("tuzi-config.json"))
+        #expect(script.contains("rg --pcre2"))
+        #expect(script.contains("sk-[A-Za-z0-9_-]{12,}"))
+    }
 }
