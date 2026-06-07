@@ -4,6 +4,31 @@ import Testing
 
 struct LiveServiceContainerTests {
     @Test
+    func liveStartupLogsStoragePruneResultWithoutPaths() throws {
+        let appSupportURL = try TestSupport.makeTemporaryDirectory()
+        let protectedSessionURL = appSupportURL.appending(path: "session.json")
+        let oldCacheURL = appSupportURL.appending(path: "Cache/old-render.bin")
+
+        try writeFile(protectedSessionURL, byteCount: 4_000, age: 100)
+        try writeFile(oldCacheURL, byteCount: 40_000, age: 90)
+
+        _ = LiveServiceContainer.live(appSupportURL: appSupportURL, storageLimitBytes: 12_000)
+
+        let logURL = appSupportURL.appending(path: "Logs/claude-lite.log")
+        let log = try String(contentsOf: logURL, encoding: .utf8)
+
+        #expect(FileManager.default.fileExists(atPath: protectedSessionURL.path(percentEncoded: false)))
+        #expect(!FileManager.default.fileExists(atPath: oldCacheURL.path(percentEncoded: false)))
+        #expect(log.contains("event=storage_prune_completed"))
+        #expect(log.contains("beforeBytes="))
+        #expect(log.contains("afterBytes="))
+        #expect(log.contains("removedBytes="))
+        #expect(log.contains("removedFileCount=1"))
+        #expect(!log.contains("old-render.bin"))
+        #expect(!log.contains(appSupportURL.path(percentEncoded: false)))
+    }
+
+    @Test
     func packagedAppBootstrapSearchRootsUseBundledResourcesOnly() {
         let currentDirectory = URL(fileURLWithPath: "/Users/hadesz/Desktop/claude-lite-mac-app")
         let appBundleURL = URL(fileURLWithPath: "/Users/hadesz/Desktop/claude-lite-mac-app/dist/问.app")
@@ -87,5 +112,15 @@ struct LiveServiceContainerTests {
         )
 
         #expect(roots.first == currentDirectory)
+    }
+
+    private func writeFile(_ url: URL, byteCount: Int, age: TimeInterval) throws {
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data(repeating: 1, count: byteCount).write(to: url)
+        let date = Date(timeIntervalSinceNow: -age)
+        try FileManager.default.setAttributes(
+            [.modificationDate: date],
+            ofItemAtPath: url.path(percentEncoded: false)
+        )
     }
 }

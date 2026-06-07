@@ -18,13 +18,17 @@ struct AppSupportStoragePrunerTests {
         try writeFile(newLogURL, byteCount: 20_000, age: 10)
         try writeFile(cacheURL, byteCount: 20_000, age: 70)
 
-        try AppSupportStoragePruner.prune(directoryURL: directory, maxTotalBytes: 32_000)
+        let result = try AppSupportStoragePruner.prune(directoryURL: directory, maxTotalBytes: 32_000)
 
         #expect(FileManager.default.fileExists(atPath: configURL.path(percentEncoded: false)))
         #expect(FileManager.default.fileExists(atPath: sessionURL.path(percentEncoded: false)))
         #expect(!FileManager.default.fileExists(atPath: oldLogURL.path(percentEncoded: false)))
         #expect(!FileManager.default.fileExists(atPath: cacheURL.path(percentEncoded: false)))
         #expect(totalSize(in: directory) <= 32_000)
+        #expect(result.beforeBytes == 114_000)
+        #expect(result.afterBytes == totalSize(in: directory))
+        #expect(result.removedBytes == 90_000)
+        #expect(result.removedFileCount == 2)
     }
 
     private func writeFile(_ url: URL, byteCount: Int, age: TimeInterval) throws {

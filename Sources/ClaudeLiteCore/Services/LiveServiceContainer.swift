@@ -28,12 +28,20 @@ public struct LiveServiceContainer: ClaudeLiteServiceContainer {
         self.logger = logger
     }
 
-    public static func live() -> LiveServiceContainer {
+    public static func live(
+        appSupportURL: URL? = nil,
+        storageLimitBytes: Int = AppSupportStoragePruner.defaultMaxTotalBytes
+    ) -> LiveServiceContainer {
         let fileManager = FileManager.default
         let currentDirectory = URL(fileURLWithPath: fileManager.currentDirectoryPath, isDirectory: true)
-        let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let appSupport = appSupportURL ?? fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
             .appending(path: "ClaudeLiteMacApp", directoryHint: .isDirectory)
-        try? AppSupportStoragePruner.prune(directoryURL: appSupport)
+        let logger = RotatingAppLogger(directoryURL: appSupport.appending(path: "Logs", directoryHint: .isDirectory))
+        logStoragePrune(
+            directoryURL: appSupport,
+            maxTotalBytes: storageLimitBytes,
+            logger: logger
+        )
         let sessionStore = PersistentSessionStore(fileURL: appSupport.appending(path: "session.json"))
         let mainBundle = Bundle.main
         let bootstrapLoader = LocalBootstrapConfigurationLoader(
@@ -51,7 +59,6 @@ public struct LiveServiceContainer: ClaudeLiteServiceContainer {
         let modelService = LiveModelService(apiClient: apiClient)
         let connectionService = LiveConnectionService(apiClient: apiClient)
         let chatService = LiveChatService(apiClient: apiClient)
-        let logger = RotatingAppLogger(directoryURL: appSupport.appending(path: "Logs", directoryHint: .isDirectory))
 
         return LiveServiceContainer(
             bootstrapLoader: bootstrapLoader,
@@ -62,6 +69,33 @@ public struct LiveServiceContainer: ClaudeLiteServiceContainer {
             chatService: chatService,
             logger: logger
         )
+    }
+
+    private static func logStoragePrune(
+        directoryURL: URL,
+        maxTotalBytes: Int,
+        logger: AppLogging
+    ) {
+        do {
+            let result = try AppSupportStoragePruner.prune(
+                directoryURL: directoryURL,
+                maxTotalBytes: maxTotalBytes
+            )
+            try? logger.record(
+                event: "storage_prune_completed",
+                metadata: [
+                    "beforeBytes": "\(result.beforeBytes)",
+                    "afterBytes": "\(result.afterBytes)",
+                    "removedBytes": "\(result.removedBytes)",
+                    "removedFileCount": "\(result.removedFileCount)"
+                ]
+            )
+        } catch {
+            try? logger.record(
+                event: "storage_prune_failed",
+                metadata: ["error": String(describing: type(of: error))]
+            )
+        }
     }
 
     static func defaultBootstrapSearchRoots(
