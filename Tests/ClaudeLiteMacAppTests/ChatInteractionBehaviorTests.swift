@@ -24,6 +24,21 @@ struct ChatInteractionBehaviorTests {
     }
 
     @Test
+    func fileImportersAllowMultipleAttachments() throws {
+        let projectRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let sourceURL = projectRoot.appending(path: "Sources/ClaudeLiteMacApp/MainWindowView.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+
+        #expect(source.components(separatedBy: "allowsMultipleSelection: true").count >= 3)
+        #expect(!source.contains("allowsMultipleSelection: false"))
+        #expect(source.contains("for fileURL in urls"))
+        #expect(!source.contains("let fileURL = urls.first"))
+    }
+
+    @Test
     func latestAssistantTargetSelectsMostRecentAssistantIncludingPendingReply() {
         let firstAssistantID = UUID()
         let latestAssistantID = UUID()

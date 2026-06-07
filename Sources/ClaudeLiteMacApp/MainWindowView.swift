@@ -39,19 +39,23 @@ struct MainWindowView: View {
         .fileImporter(
             isPresented: $showingFilePicker,
             allowedContentTypes: [.item],
-            allowsMultipleSelection: false
+            allowsMultipleSelection: true
         ) { result in
-            if case let .success(urls) = result, let fileURL = urls.first {
-                viewModel.addAttachment(from: fileURL)
+            if case let .success(urls) = result {
+                for fileURL in urls {
+                    viewModel.addAttachment(from: fileURL)
+                }
             }
         }
         .fileImporter(
             isPresented: $showingImagePicker,
             allowedContentTypes: [.image],
-            allowsMultipleSelection: false
+            allowsMultipleSelection: true
         ) { result in
-            if case let .success(urls) = result, let fileURL = urls.first {
-                viewModel.addAttachment(from: fileURL)
+            if case let .success(urls) = result {
+                for fileURL in urls {
+                    viewModel.addAttachment(from: fileURL)
+                }
             }
         }
         .sheet(item: $previewedImageAttachment) { attachment in
