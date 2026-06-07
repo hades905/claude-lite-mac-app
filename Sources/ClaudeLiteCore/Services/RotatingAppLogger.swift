@@ -20,7 +20,7 @@ public final class RotatingAppLogger: AppLogging, @unchecked Sendable {
     private let lock = NSLock()
     private let sensitiveKeys: Set<String> = [
         "apikey", "api_key", "authorization", "bearer", "token", "key",
-        "prompt", "message", "reply", "conversation", "content", "text"
+        "prompt", "reply", "conversation", "content", "text"
     ]
 
     public init(
@@ -69,7 +69,7 @@ public final class RotatingAppLogger: AppLogging, @unchecked Sendable {
 
     private func redactedValue(_ value: String, for key: String) -> String {
         let normalizedKey = key.lowercased()
-        guard !sensitiveKeys.contains(normalizedKey) else {
+        guard !sensitiveKeys.contains(where: { normalizedKey.contains($0) }) else {
             return "<redacted>"
         }
 

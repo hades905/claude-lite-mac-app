@@ -33,6 +33,35 @@ struct RotatingAppLoggerTests {
     }
 
     @Test
+    func loggerRedactsSensitiveValuesForCompoundMetadataKeys() throws {
+        let directory = try TestSupport.makeTemporaryDirectory()
+        let logger = RotatingAppLogger(
+            directoryURL: directory,
+            fileName: "app.log",
+            maxFileBytes: 4_096,
+            maxTotalBytes: 8_192
+        )
+
+        try logger.record(
+            event: "bootstrap_loaded",
+            metadata: [
+                "authorizationHeader": "private authorization placeholder",
+                "modelAPIKey": "private-model-key",
+                "userTokenValue": "private-user-token"
+            ]
+        )
+
+        let log = try String(contentsOf: directory.appending(path: "app.log"), encoding: .utf8)
+
+        #expect(log.contains("authorizationHeader=<redacted>"))
+        #expect(log.contains("modelAPIKey=<redacted>"))
+        #expect(log.contains("userTokenValue=<redacted>"))
+        #expect(!log.contains("private authorization placeholder"))
+        #expect(!log.contains("private-model-key"))
+        #expect(!log.contains("private-user-token"))
+    }
+
+    @Test
     func loggerRedactsSensitiveTokensInsideSafeMetadataValues() throws {
         let directory = try TestSupport.makeTemporaryDirectory()
         let logger = RotatingAppLogger(
