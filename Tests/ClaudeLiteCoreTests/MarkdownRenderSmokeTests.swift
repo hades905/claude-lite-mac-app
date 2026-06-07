@@ -167,6 +167,33 @@ struct MarkdownRenderSmokeTests {
         #expect(unsafeLinkRan == false)
     }
 
+    @Test
+    func rendersMarkdownWithoutRemoteImageLoads() async throws {
+        let markdown = """
+        # Remote image
+
+        ![tracking pixel](https://example.com/tracker.png)
+        """
+        let html = MarkdownHTMLDocument.makeHTML(for: markdown)
+
+        let webView = WKWebView(frame: NSRect(x: 0, y: 0, width: 600, height: 400))
+        let delegate = NavigationDelegate()
+        webView.navigationDelegate = delegate
+        webView.loadHTMLString(html, baseURL: nil)
+        await delegate.waitForFinish()
+        try await waitForRenderCompletion(in: webView)
+
+        let heading = try await javaScriptString("document.querySelector('h1')?.textContent", in: webView)
+        let remoteImageCount = try await javaScriptInt("""
+        document.querySelectorAll('#content img[src^="http://"], #content img[src^="https://"]').length
+        """, in: webView)
+        let imageAltText = try await javaScriptString("document.querySelector('#content img')?.getAttribute('alt')", in: webView)
+
+        #expect(heading == "Remote image")
+        #expect(remoteImageCount == 0)
+        #expect(imageAltText == "tracking pixel")
+    }
+
     private func waitForRenderCompletion(in webView: WKWebView) async throws {
         for _ in 0..<50 {
             let isReady = try await javaScriptBool("window.__renderComplete === true", in: webView)

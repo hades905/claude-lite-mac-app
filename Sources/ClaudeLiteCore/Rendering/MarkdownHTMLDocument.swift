@@ -240,6 +240,7 @@ public enum MarkdownHTMLDocument {
                 'srcset'
               ]);
               const blockedURLPattern = /^(?:javascript|data|vbscript|file):/i;
+              const remoteURLPattern = /^https?:/i;
 
               for (const element of Array.from(container.querySelectorAll('*'))) {
                 if (blockedTags.has(element.tagName.toLowerCase())) {
@@ -254,6 +255,7 @@ public enum MarkdownHTMLDocument {
                   if (
                     name.startsWith('on') ||
                     blockedAttributes.has(name) ||
+                    (element.tagName.toLowerCase() === 'img' && name === 'src' && remoteURLPattern.test(value)) ||
                     (urlAttributes.has(name) && blockedURLPattern.test(value))
                   ) {
                     element.removeAttribute(attribute.name);
