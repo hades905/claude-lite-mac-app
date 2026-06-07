@@ -74,5 +74,8 @@ struct LauncherCommandTests {
         #expect(script.contains("tuzi-config.json"))
         #expect(script.contains("rg --pcre2"))
         #expect(script.contains("sk-[A-Za-z0-9_-]{12,}"))
+        #expect(script.contains("cleanup_build_cache()"))
+        #expect(script.contains("trap cleanup_build_cache EXIT"))
+        #expect(script.contains("rm -rf \"$ROOT_DIR/.build\""))
     }
 }

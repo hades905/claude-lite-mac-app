@@ -5,6 +5,16 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 APP_PATH="$ROOT_DIR/dist/问.app"
 MAX_APP_BYTES=$((100 * 1024 * 1024))
 
+cleanup_build_cache() {
+  rm -rf "$ROOT_DIR/.build"
+  rm -rf "$ROOT_DIR/.build-support"
+  rm -rf "$ROOT_DIR/.build-verification"
+  rm -rf "$ROOT_DIR/.swiftpm"
+  rm -rf "$ROOT_DIR/DerivedData"
+}
+
+trap cleanup_build_cache EXIT
+
 cd "$ROOT_DIR"
 
 echo "== Offline smoke =="
