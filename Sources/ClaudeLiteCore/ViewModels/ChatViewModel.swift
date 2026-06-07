@@ -154,6 +154,10 @@ public final class ChatViewModel {
 
     public func removeDraftAttachment(id: UUID) {
         draftAttachments.removeAll { $0.id == id }
+        if draftAttachments.count < Self.maxDraftAttachments,
+           errorMessage == readableMessage(for: ChatViewModelError.tooManyAttachments) {
+            errorMessage = nil
+        }
     }
 
     public func send() async throws {

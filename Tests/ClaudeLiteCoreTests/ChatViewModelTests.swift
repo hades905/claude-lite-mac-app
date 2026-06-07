@@ -329,6 +329,31 @@ struct ChatViewModelTests {
     }
 
     @Test
+    func removingAttachmentClearsTooManyAttachmentsError() async throws {
+        let services = TestServiceContainer(
+            availableModels: [
+                ClaudeModel(id: "claude-opus-4-7", displayName: "Claude Opus 4.7")
+            ],
+            replyText: "ok"
+        )
+        let viewModel = ChatViewModel(services: services)
+        let attachmentURLs = try (0...ChatViewModel.maxDraftAttachments).map { index in
+            try writeTemporaryFile(named: "notes-\(index).txt", contents: "small context")
+        }
+
+        try await viewModel.start()
+        for fileURL in attachmentURLs {
+            viewModel.addAttachment(from: fileURL)
+        }
+        let attachmentToRemove = try #require(viewModel.draftAttachments.first?.id)
+
+        viewModel.removeDraftAttachment(id: attachmentToRemove)
+
+        #expect(viewModel.draftAttachments.count == ChatViewModel.maxDraftAttachments - 1)
+        #expect(viewModel.errorMessage == nil)
+    }
+
+    @Test
     func sendWithoutModelAPIKeyShowsReadableErrorAndSafeDiagnostics() async throws {
         let services = TestServiceContainer(
             availableModels: [
