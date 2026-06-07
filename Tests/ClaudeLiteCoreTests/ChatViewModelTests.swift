@@ -109,6 +109,28 @@ struct ChatViewModelTests {
     }
 
     @Test
+    func oversizedImageFailureShowsActionableErrorMessage() async throws {
+        let chatService = FailingChatService(error: AttachmentPromptAdapterError.imageTooLarge("huge.png"))
+        let services = TestServiceContainer(
+            availableModels: [
+                ClaudeModel(id: "claude-opus-4-7", displayName: "Claude Opus 4.7")
+            ],
+            chatService: chatService
+        )
+        let viewModel = ChatViewModel(services: services)
+
+        try await viewModel.start()
+        viewModel.draftText = "describe image"
+
+        await #expect(throws: AttachmentPromptAdapterError.imageTooLarge("huge.png")) {
+            try await viewModel.send()
+        }
+
+        #expect(viewModel.errorMessage == "Image is too large. Choose one under 20 MB.")
+        #expect(viewModel.connectionStatus == .connected)
+    }
+
+    @Test
     func sendShowsPendingAssistantMessageUntilReplyArrives() async throws {
         let chatService = ControlledChatService()
         let services = TestServiceContainer(
@@ -292,6 +314,18 @@ private final class ControlledChatService: ChatServing, @unchecked Sendable {
 
     func recordedConversations() async -> [[ChatMessage]] {
         await state.recordedConversations
+    }
+}
+
+private struct FailingChatService: ChatServing {
+    let error: Error
+
+    func sendMessage(
+        conversation: [ChatMessage],
+        modelID: String,
+        apiKey: String
+    ) async throws -> ChatMessage {
+        throw error
     }
 }
 

@@ -66,6 +66,24 @@ struct AttachmentPromptAdapterTests {
         #expect(SizeMetadataUnavailableURLProtocol.requestCount == 0)
     }
 
+    @Test
+    func oversizedImageAttachmentIsRejectedBeforeReadingData() throws {
+        let imageURL = try writeBinaryFile(
+            named: "huge.png",
+            byteCount: AttachmentPromptAdapter.maxImageAttachmentBytes + 1
+        )
+        let message = ChatMessage.user(
+            text: "describe",
+            attachments: [
+                ChatAttachment(name: "huge.png", kind: .image, localURL: imageURL)
+            ]
+        )
+
+        #expect(throws: AttachmentPromptAdapterError.imageTooLarge("huge.png")) {
+            _ = try AttachmentPromptAdapter.renderMessageContent(for: message)
+        }
+    }
+
     private func writeTemporaryFile(named name: String, contents: String) throws -> URL {
         let directory = FileManager.default.temporaryDirectory
             .appending(path: "AttachmentPromptAdapterTests-\(UUID().uuidString)", directoryHint: .isDirectory)
@@ -73,6 +91,19 @@ struct AttachmentPromptAdapterTests {
 
         let fileURL = directory.appending(path: name)
         try contents.write(to: fileURL, atomically: true, encoding: .utf8)
+        return fileURL
+    }
+
+    private func writeBinaryFile(named name: String, byteCount: Int) throws -> URL {
+        let directory = FileManager.default.temporaryDirectory
+            .appending(path: "AttachmentPromptAdapterTests-\(UUID().uuidString)", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+
+        let fileURL = directory.appending(path: name)
+        FileManager.default.createFile(atPath: fileURL.path(percentEncoded: false), contents: nil)
+        let handle = try FileHandle(forWritingTo: fileURL)
+        try handle.truncate(atOffset: UInt64(byteCount))
+        try handle.close()
         return fileURL
     }
 }

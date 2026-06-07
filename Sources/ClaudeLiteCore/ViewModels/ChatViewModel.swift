@@ -185,7 +185,9 @@ public final class ChatViewModel {
             )
             messages.removeAll { $0.id == pendingReplyID }
             errorMessage = readableMessage(for: error)
-            connectionStatus = .disconnected
+            if !isLocalAttachmentError(error) {
+                connectionStatus = .disconnected
+            }
             try persistSnapshot()
             log(
                 event: "send_failed",
@@ -240,8 +242,23 @@ public final class ChatViewModel {
             "Key not accepted."
         case ChatViewModelError.missingModel:
             "Selected model is unavailable."
+        case AttachmentPromptAdapterError.imageTooLarge:
+            "Image is too large. Choose one under 20 MB."
+        case AttachmentPromptAdapterError.unreadableImage:
+            "Image could not be read."
         default:
             "Can’t reach server."
+        }
+    }
+
+    private func isLocalAttachmentError(_ error: Error) -> Bool {
+        switch error {
+        case AttachmentPromptAdapterError.imageTooLarge:
+            true
+        case AttachmentPromptAdapterError.unreadableImage:
+            true
+        default:
+            false
         }
     }
 

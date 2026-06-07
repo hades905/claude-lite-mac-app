@@ -3,6 +3,7 @@ import UniformTypeIdentifiers
 
 enum AttachmentPromptAdapter {
     private static let maxInlineTextFileBytes = 32_000
+    static let maxImageAttachmentBytes = 20 * 1_024 * 1_024
 
     private static let textExtensions: Set<String> = [
         "txt", "md", "json", "csv", "tsv", "swift", "py", "js", "ts", "tsx", "jsx",
@@ -144,6 +145,10 @@ enum AttachmentPromptAdapter {
             throw AttachmentPromptAdapterError.unreadableImage(attachment.name)
         }
 
+        guard imageAttachmentIsWithinSizeLimit(localURL) else {
+            throw AttachmentPromptAdapterError.imageTooLarge(attachment.name)
+        }
+
         let mediaType = mimeType(for: localURL) ?? "application/octet-stream"
         let data = try readSecurityScopedData(from: localURL)
         guard !data.isEmpty else {
@@ -162,6 +167,19 @@ enum AttachmentPromptAdapter {
         }
 
         return try Data(contentsOf: url)
+    }
+
+    private static func imageAttachmentIsWithinSizeLimit(_ url: URL) -> Bool {
+        let resolvedURL = url.resolvingSymlinksInPath()
+        guard
+            let values = try? resolvedURL.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey]),
+            values.isRegularFile == true,
+            let fileSize = values.fileSize
+        else {
+            return false
+        }
+
+        return fileSize <= maxImageAttachmentBytes
     }
 
     private static func mimeType(for url: URL) -> String? {
@@ -183,6 +201,7 @@ enum AttachmentPromptAdapter {
 
 enum AttachmentPromptAdapterError: Error, Equatable {
     case unreadableImage(String)
+    case imageTooLarge(String)
 }
 
 private struct ImageAttachmentPayload {
