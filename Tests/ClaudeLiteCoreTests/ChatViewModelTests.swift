@@ -413,6 +413,24 @@ struct ChatViewModelTests {
     }
 
     @Test
+    func failedConnectionRefreshShowsReadableErrorMessage() async throws {
+        let services = TestServiceContainer(
+            availableModels: [
+                ClaudeModel(id: "claude-opus-4-7", displayName: "Claude Opus 4.7")
+            ],
+            connectionService: FixedConnectionService(status: .disconnected),
+            replyText: "ok"
+        )
+        let viewModel = ChatViewModel(services: services)
+
+        try await viewModel.start()
+        await viewModel.refreshConnection()
+
+        #expect(viewModel.connectionStatus == ConnectionStatus.disconnected)
+        #expect(viewModel.errorMessage == "Can’t reach server.")
+    }
+
+    @Test
     func sendShowsPendingAssistantMessageUntilReplyArrives() async throws {
         let chatService = ControlledChatService()
         let services = TestServiceContainer(
@@ -631,6 +649,14 @@ private struct FailingChatService: ChatServing {
         apiKey: String
     ) async throws -> ChatMessage {
         throw error
+    }
+}
+
+private struct FixedConnectionService: ConnectionServing {
+    let status: ConnectionStatus
+
+    func checkConnection(apiKey: String?) async -> ConnectionStatus {
+        status
     }
 }
 

@@ -70,6 +70,28 @@ struct TestServiceContainer: ClaudeLiteServiceContainer {
         self.logger = TestLogger(storage: storage)
     }
 
+    init(
+        availableModels: [ClaudeModel],
+        connectionService: any ConnectionServing,
+        replyText: String,
+        bootstrapConfiguration: BootstrapConfiguration? = BootstrapConfiguration(
+            modelAPIKey: "model-key",
+            userAPIKey: "user-key",
+            defaultModel: "claude-opus-4-7",
+            baseURL: URL(string: "https://api.tu-zi.com")!
+        )
+    ) {
+        let storage = TestStorage()
+        self.storage = storage
+        self.bootstrapLoader = TestBootstrapLoader(configuration: bootstrapConfiguration)
+        self.secureStore = TestSecureStore(storage: storage)
+        self.sessionStore = TestSessionStore(storage: storage)
+        self.modelService = TestModelService(models: availableModels)
+        self.connectionService = connectionService
+        self.chatService = TestChatService(replyText: replyText)
+        self.logger = TestLogger(storage: storage)
+    }
+
     var savedSnapshots: [SessionSnapshot] {
         storage.savedSnapshots
     }

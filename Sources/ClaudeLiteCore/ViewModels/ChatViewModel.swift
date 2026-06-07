@@ -81,7 +81,7 @@ public final class ChatViewModel {
             connectionStatus = .checking
             connectionStatus = await services.connectionService.checkConnection(apiKey: apiKey)
             log(event: "connection_checked", metadata: ["status": connectionStatus.rawValue])
-            errorMessage = nil
+            errorMessage = refreshErrorMessage(for: connectionStatus)
 
             if let apiKey, connectionStatus == .connected {
                 availableModels = try await services.modelService.fetchClaudeModels(apiKey: apiKey)
@@ -97,6 +97,19 @@ public final class ChatViewModel {
             errorMessage = readableMessage(for: error)
             connectionStatus = .disconnected
             log(event: "connection_failed", metadata: ["error": String(describing: type(of: error))])
+        }
+    }
+
+    private func refreshErrorMessage(for status: ConnectionStatus) -> String? {
+        switch status {
+        case .connected:
+            nil
+        case .authFailed:
+            readableMessage(for: ChatViewModelError.missingAPIKey)
+        case .disconnected:
+            "Can’t reach server."
+        case .checking:
+            nil
         }
     }
 
