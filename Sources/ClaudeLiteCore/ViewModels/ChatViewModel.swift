@@ -5,6 +5,7 @@ import Observation
 @Observable
 public final class ChatViewModel {
     public static let pendingReplyText = "正在回复..."
+    public static let maxDraftAttachments = 8
 
     public private(set) var messages: [ChatMessage] = []
     public private(set) var availableModels: [ClaudeModel] = []
@@ -105,6 +106,18 @@ public final class ChatViewModel {
     }
 
     public func addAttachment(from fileURL: URL) {
+        guard draftAttachments.count < Self.maxDraftAttachments else {
+            errorMessage = readableMessage(for: ChatViewModelError.tooManyAttachments)
+            log(
+                event: "attachment_rejected",
+                metadata: [
+                    "attachmentCount": "\(draftAttachments.count)",
+                    "reason": "tooManyAttachments"
+                ]
+            )
+            return
+        }
+
         let isImage = ["png", "jpg", "jpeg", "gif", "webp", "heic"].contains(fileURL.pathExtension.lowercased())
         if isImage, !AttachmentPromptAdapter.imageAttachmentIsWithinSizeLimit(fileURL) {
             errorMessage = readableMessage(for: AttachmentPromptAdapterError.imageTooLarge(fileURL.lastPathComponent))
@@ -288,6 +301,8 @@ public final class ChatViewModel {
             "File is too large. Choose one under 20 MB."
         case AttachmentPromptAdapterError.unreadableImage:
             "Image could not be read."
+        case ChatViewModelError.tooManyAttachments:
+            "Too many attachments. Remove one before adding more."
         case DecodingError.dataCorrupted, DecodingError.keyNotFound, DecodingError.typeMismatch, DecodingError.valueNotFound:
             "Configuration could not be read."
         default:
@@ -366,4 +381,5 @@ public final class ChatViewModel {
 public enum ChatViewModelError: Error {
     case missingAPIKey
     case missingModel
+    case tooManyAttachments
 }
