@@ -26,6 +26,28 @@ struct PersistentSessionStoreTests {
     }
 
     @Test
+    func savesSessionSnapshotAsCompactJSON() throws {
+        let directory = try TestSupport.makeTemporaryDirectory()
+        let fileURL = directory.appending(path: "session.json")
+        let store = PersistentSessionStore(fileURL: fileURL)
+        let snapshot = SessionSnapshot(
+            messages: [
+                ChatMessage.user(text: "Hello"),
+                ChatMessage.assistant(text: "Hi there")
+            ],
+            selectedModelID: "claude-opus-4-7",
+            lastConnectionStatus: .connected
+        )
+
+        try store.save(snapshot)
+
+        let savedJSON = try String(contentsOf: fileURL, encoding: .utf8)
+        #expect(!savedJSON.contains("\n  "))
+        #expect(savedJSON.split(separator: "\n").count == 1)
+        #expect(try store.load() == snapshot)
+    }
+
+    @Test
     func loadsLegacySnapshotWithoutMessageStatus() throws {
         let directory = try TestSupport.makeTemporaryDirectory()
         let fileURL = directory.appending(path: "session.json")

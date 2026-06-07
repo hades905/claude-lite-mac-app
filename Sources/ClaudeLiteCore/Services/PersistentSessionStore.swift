@@ -7,7 +7,7 @@ public final class PersistentSessionStore: SessionStoring {
 
     public init(fileURL: URL) {
         self.fileURL = fileURL
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.outputFormatting = [.sortedKeys]
     }
 
     public func load() throws -> SessionSnapshot {
