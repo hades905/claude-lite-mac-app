@@ -39,6 +39,19 @@ struct ChatInteractionBehaviorTests {
     }
 
     @Test
+    func restoredImageAttachmentsWithoutLocalFileRenderAsChips() throws {
+        let projectRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let sourceURL = projectRoot.appending(path: "Sources/ClaudeLiteMacApp/MainWindowView.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+
+        #expect(source.contains("case .image where attachment.localURL != nil"))
+        #expect(source.contains("case .image, .file:"))
+    }
+
+    @Test
     func latestAssistantTargetSelectsMostRecentAssistantIncludingPendingReply() {
         let firstAssistantID = UUID()
         let latestAssistantID = UUID()

@@ -492,7 +492,7 @@ private struct AttachmentPreviewStrip: View {
             HStack(alignment: .top, spacing: 10) {
                 ForEach(attachments) { attachment in
                     switch attachment.kind {
-                    case .image:
+                    case .image where attachment.localURL != nil:
                         ImageAttachmentPreview(
                             attachment: attachment,
                             size: imageSize,
@@ -500,7 +500,7 @@ private struct AttachmentPreviewStrip: View {
                             remove: context == .composer ? { remove?(attachment.id) } : nil,
                             open: { openImage?(attachment) }
                         )
-                    case .file:
+                    case .image, .file:
                         AttachmentChip(
                             attachment: attachment,
                             remove: context == .composer ? { remove?(attachment.id) } : nil
