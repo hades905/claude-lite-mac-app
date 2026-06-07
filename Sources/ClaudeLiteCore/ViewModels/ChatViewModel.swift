@@ -147,6 +147,7 @@ public final class ChatViewModel {
         draftText = ""
         draftAttachments = []
         try persistSnapshot()
+        let sendStartedAt = Date()
         log(
             event: "send_started",
             metadata: [
@@ -175,6 +176,7 @@ public final class ChatViewModel {
             log(
                 event: "send_succeeded",
                 metadata: [
+                    "durationMs": elapsedMilliseconds(since: sendStartedAt),
                     "model": selectedModel.id,
                     "messageCount": "\(conversation.count)",
                     "attachmentCount": "\(outgoingForRequest.attachments.count)"
@@ -194,6 +196,7 @@ public final class ChatViewModel {
             log(
                 event: "send_failed",
                 metadata: [
+                    "durationMs": elapsedMilliseconds(since: sendStartedAt),
                     "model": selectedModel.id,
                     "messageCount": "\(conversation.count)",
                     "attachmentCount": "\(outgoingForRequest.attachments.count)",
@@ -269,16 +272,19 @@ public final class ChatViewModel {
     }
 
     private func logStartCompleted(startedAt: Date) {
-        let durationMs = max(0, Int(Date().timeIntervalSince(startedAt) * 1_000))
         log(
             event: "start_completed",
             metadata: [
-                "durationMs": "\(durationMs)",
+                "durationMs": elapsedMilliseconds(since: startedAt),
                 "messageCount": "\(messages.count)",
                 "modelCount": "\(availableModels.count)",
                 "status": connectionStatus.rawValue
             ]
         )
+    }
+
+    private func elapsedMilliseconds(since startedAt: Date) -> String {
+        "\(max(0, Int(Date().timeIntervalSince(startedAt) * 1_000)))"
     }
 }
 

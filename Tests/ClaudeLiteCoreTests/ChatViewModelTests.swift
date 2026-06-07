@@ -97,7 +97,8 @@ struct ChatViewModelTests {
 
         try await viewModel.send()
 
-        #expect(services.logEntries.contains { $0.event == "send_succeeded" })
+        let succeededEntry = try #require(services.logEntries.last { $0.event == "send_succeeded" })
+        #expect(succeededEntry.metadata["durationMs"] != nil)
         #expect(services.logEntries.contains { entry in
             entry.metadata["model"] == "claude-opus-4-7" &&
                 entry.metadata["messageCount"] == "1"
@@ -157,6 +158,8 @@ struct ChatViewModelTests {
 
         #expect(viewModel.errorMessage == "Image is too large. Choose one under 20 MB.")
         #expect(viewModel.connectionStatus == .connected)
+        let failedEntry = try #require(services.logEntries.last { $0.event == "send_failed" })
+        #expect(failedEntry.metadata["durationMs"] != nil)
     }
 
     @Test
