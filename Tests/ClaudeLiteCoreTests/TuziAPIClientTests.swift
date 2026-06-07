@@ -5,6 +5,13 @@ import Testing
 @Suite(.serialized)
 struct TuziAPIClientTests {
     @Test
+    func defaultClientUsesNonCachingSession() {
+        let client = TuziAPIClient()
+
+        #expect(client.usesURLCache == false)
+    }
+
+    @Test
     func sendMessageDoesNotSetLocalMaxTokenCap() async throws {
         RecordingURLProtocol.reset()
 

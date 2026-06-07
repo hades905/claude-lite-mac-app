@@ -4,7 +4,18 @@ public final class TuziAPIClient: Sendable {
     private let baseURL: URL
     private let session: URLSession
 
-    public init(baseURL: URL = URL(string: "https://api.tu-zi.com")!, session: URLSession = .shared) {
+    public var usesURLCache: Bool {
+        session.configuration.urlCache != nil
+    }
+
+    public convenience init(baseURL: URL = URL(string: "https://api.tu-zi.com")!) {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.urlCache = nil
+        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        self.init(baseURL: baseURL, session: URLSession(configuration: configuration))
+    }
+
+    public init(baseURL: URL, session: URLSession) {
         self.baseURL = baseURL
         self.session = session
     }
