@@ -34,6 +34,22 @@ struct TestServiceContainer: ClaudeLiteServiceContainer {
     }
 
     init(
+        bootstrapLoader: BootstrapConfigurationLoading,
+        availableModels: [ClaudeModel],
+        replyText: String
+    ) {
+        let storage = TestStorage()
+        self.storage = storage
+        self.bootstrapLoader = bootstrapLoader
+        self.secureStore = TestSecureStore(storage: storage)
+        self.sessionStore = TestSessionStore(storage: storage)
+        self.modelService = TestModelService(models: availableModels)
+        self.connectionService = TestConnectionService()
+        self.chatService = TestChatService(replyText: replyText)
+        self.logger = TestLogger(storage: storage)
+    }
+
+    init(
         availableModels: [ClaudeModel],
         chatService: any ChatServing,
         bootstrapConfiguration: BootstrapConfiguration? = BootstrapConfiguration(

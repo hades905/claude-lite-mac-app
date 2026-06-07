@@ -165,6 +165,33 @@ struct ChatViewModelTests {
         #expect(!services.logEntries.contains { entry in
             entry.metadata.values.contains("private-model-key") ||
                 entry.metadata.values.contains("private-user-key")
+            })
+    }
+
+    @Test
+    func startFailureRecordsSafeDiagnosticsAndLeavesDisconnectedState() async throws {
+        let services = TestServiceContainer(
+            bootstrapLoader: ThrowingBootstrapLoader(),
+            availableModels: [
+                ClaudeModel(id: "claude-opus-4-7", displayName: "Claude Opus 4.7")
+            ],
+            replyText: "ok"
+        )
+        let viewModel = ChatViewModel(services: services)
+
+        await #expect(throws: DecodingError.self) {
+            try await viewModel.start()
+        }
+
+        #expect(viewModel.connectionStatus == .disconnected)
+        #expect(viewModel.errorMessage == "Configuration could not be read.")
+        let failedEntry = try #require(services.logEntries.last { $0.event == "start_failed" })
+        #expect(failedEntry.metadata["error"] == "DecodingError")
+        #expect(failedEntry.metadata["durationMs"] != nil)
+        #expect(!services.logEntries.contains { entry in
+            entry.metadata.values.contains("private-model-key") ||
+                entry.metadata.values.contains("private-user-key") ||
+                entry.metadata.values.contains("invalid config content")
         })
     }
 
@@ -568,6 +595,14 @@ private struct LegacySecureStore: SecureStoring {
 
 private enum TestSecureStoreError: Error {
     case unexpectedAccess
+}
+
+private struct ThrowingBootstrapLoader: BootstrapConfigurationLoading {
+    func loadBootstrapConfiguration() throws -> BootstrapConfiguration? {
+        throw DecodingError.dataCorrupted(
+            DecodingError.Context(codingPath: [], debugDescription: "invalid config content")
+        )
+    }
 }
 
 private struct InlineBootstrapLoader: BootstrapConfigurationLoading {

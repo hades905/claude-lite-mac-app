@@ -32,39 +32,46 @@ public final class ChatViewModel {
         defer { isStarting = false }
         log(event: "start_begin")
 
-        bootstrapConfiguration = try services.bootstrapLoader.loadBootstrapConfiguration()
+        do {
+            bootstrapConfiguration = try services.bootstrapLoader.loadBootstrapConfiguration()
 
-        let snapshot = try services.sessionStore.load()
-        messages = snapshot.messages
-        connectionStatus = snapshot.lastConnectionStatus
+            let snapshot = try services.sessionStore.load()
+            messages = snapshot.messages
+            connectionStatus = snapshot.lastConnectionStatus
 
-        let apiKey = try resolvedModelAPIKey()
-        connectionStatus = .checking
+            let apiKey = try resolvedModelAPIKey()
+            connectionStatus = .checking
 
-        if let apiKey, !apiKey.isEmpty {
-            availableModels = try await services.modelService.fetchClaudeModels(apiKey: apiKey)
-            selectedModel = ModelCatalog.resolveSelection(
-                available: availableModels,
-                storedSelection: snapshot.selectedModelID,
-                bootstrapDefault: bootstrapConfiguration?.defaultModel
-            )
-            connectionStatus = .connected
-            log(
-                event: "start_connected",
-                metadata: [
-                    "modelCount": "\(availableModels.count)",
-                    "messageCount": "\(messages.count)"
-                ]
-            )
-        } else {
-            availableModels = []
-            selectedModel = nil
-            connectionStatus = .authFailed
-            log(event: "start_auth_failed", metadata: ["messageCount": "\(messages.count)"])
+            if let apiKey, !apiKey.isEmpty {
+                availableModels = try await services.modelService.fetchClaudeModels(apiKey: apiKey)
+                selectedModel = ModelCatalog.resolveSelection(
+                    available: availableModels,
+                    storedSelection: snapshot.selectedModelID,
+                    bootstrapDefault: bootstrapConfiguration?.defaultModel
+                )
+                connectionStatus = .connected
+                log(
+                    event: "start_connected",
+                    metadata: [
+                        "modelCount": "\(availableModels.count)",
+                        "messageCount": "\(messages.count)"
+                    ]
+                )
+            } else {
+                availableModels = []
+                selectedModel = nil
+                connectionStatus = .authFailed
+                log(event: "start_auth_failed", metadata: ["messageCount": "\(messages.count)"])
+            }
+
+            try persistSnapshot()
+            logStartCompleted(startedAt: startedAt)
+        } catch {
+            connectionStatus = .disconnected
+            errorMessage = readableMessage(for: error)
+            logStartFailed(startedAt: startedAt, error: error)
+            throw error
         }
-
-        try persistSnapshot()
-        logStartCompleted(startedAt: startedAt)
     }
 
     public func refreshConnection() async {
@@ -277,6 +284,8 @@ public final class ChatViewModel {
             "File is too large. Choose one under 20 MB."
         case AttachmentPromptAdapterError.unreadableImage:
             "Image could not be read."
+        case DecodingError.dataCorrupted, DecodingError.keyNotFound, DecodingError.typeMismatch, DecodingError.valueNotFound:
+            "Configuration could not be read."
         default:
             "Can’t reach server."
         }
@@ -331,6 +340,16 @@ public final class ChatViewModel {
                 "messageCount": "\(messages.count)",
                 "modelCount": "\(availableModels.count)",
                 "status": connectionStatus.rawValue
+            ]
+        )
+    }
+
+    private func logStartFailed(startedAt: Date, error: Error) {
+        log(
+            event: "start_failed",
+            metadata: [
+                "durationMs": elapsedMilliseconds(since: startedAt),
+                "error": String(describing: type(of: error))
             ]
         )
     }
