@@ -99,9 +99,10 @@ enum AttachmentPromptAdapter {
     }
 
     private static func renderAttachmentSummary(_ attachment: ChatAttachment) -> String {
+        let safeName = sanitizedAttachmentName(attachment.name)
         switch attachment.kind {
         case .image:
-            return "[Image attached: \(attachment.name)]"
+            return "[Image attached: \(safeName)]"
         case .file:
             guard
                 let localURL = attachment.localURL,
@@ -111,16 +112,31 @@ enum AttachmentPromptAdapter {
                 data.count <= maxInlineTextFileBytes,
                 let text = String(data: data, encoding: .utf8)
             else {
-                return "[File attached: \(attachment.name)]"
+                return "[File attached: \(safeName)]"
             }
 
             return """
-            [File attached: \(attachment.name)]
+            [File attached: \(safeName)]
             <file>
             \(text)
             </file>
             """
         }
+    }
+
+    private static func sanitizedAttachmentName(_ name: String) -> String {
+        let scalars = name.unicodeScalars.map { scalar in
+            CharacterSet.alphanumerics.contains(scalar) || ".-_ ".unicodeScalars.contains(scalar)
+                ? Character(scalar)
+                : "_"
+        }
+        let collapsed = String(scalars).replacingOccurrences(
+            of: #"\s+"#,
+            with: " ",
+            options: .regularExpression
+        )
+        let trimmed = collapsed.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "attachment" : trimmed
     }
 
     private static func inlineableTextFileURL(for url: URL) -> URL? {
