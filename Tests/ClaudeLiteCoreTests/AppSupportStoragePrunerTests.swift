@@ -25,10 +25,31 @@ struct AppSupportStoragePrunerTests {
         #expect(!FileManager.default.fileExists(atPath: oldLogURL.path(percentEncoded: false)))
         #expect(!FileManager.default.fileExists(atPath: cacheURL.path(percentEncoded: false)))
         #expect(totalSize(in: directory) <= 32_000)
-        #expect(result.beforeBytes == 114_000)
+        #expect(result.beforeBytes == 118_000)
         #expect(result.afterBytes == totalSize(in: directory))
         #expect(result.removedBytes == 90_000)
         #expect(result.removedFileCount == 2)
+    }
+
+    @Test
+    func prunerCountsAndRemovesHiddenFilesInsideReclaimableDirectories() throws {
+        let directory = try TestSupport.makeTemporaryDirectory()
+        let configURL = directory.appending(path: ".local/tuzi-config.json")
+        let hiddenCacheURL = directory.appending(path: "Cache/.render-cache.bin")
+        let visibleCacheURL = directory.appending(path: "Cache/render-cache.bin")
+
+        try writeFile(configURL, byteCount: 4_000, age: 100)
+        try writeFile(hiddenCacheURL, byteCount: 70_000, age: 80)
+        try writeFile(visibleCacheURL, byteCount: 20_000, age: 10)
+
+        let result = try AppSupportStoragePruner.prune(directoryURL: directory, maxTotalBytes: 24_000)
+
+        #expect(FileManager.default.fileExists(atPath: configURL.path(percentEncoded: false)))
+        #expect(!FileManager.default.fileExists(atPath: hiddenCacheURL.path(percentEncoded: false)))
+        #expect(totalSize(in: directory) <= 24_000)
+        #expect(result.beforeBytes == 94_000)
+        #expect(result.removedBytes >= 70_000)
+        #expect(result.removedFileCount >= 1)
     }
 
     private func writeFile(_ url: URL, byteCount: Int, age: TimeInterval) throws {
@@ -45,7 +66,7 @@ struct AppSupportStoragePrunerTests {
         guard let enumerator = FileManager.default.enumerator(
             at: directory,
             includingPropertiesForKeys: [.fileSizeKey],
-            options: [.skipsHiddenFiles]
+            options: []
         ) else {
             return 0
         }
