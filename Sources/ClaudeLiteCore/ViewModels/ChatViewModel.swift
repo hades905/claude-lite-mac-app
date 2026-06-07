@@ -110,6 +110,18 @@ public final class ChatViewModel {
             return
         }
 
+        if !isImage, !AttachmentPromptAdapter.fileAttachmentIsWithinSizeLimit(fileURL) {
+            errorMessage = readableMessage(for: AttachmentPromptAdapterError.fileTooLarge(fileURL.lastPathComponent))
+            log(
+                event: "attachment_rejected",
+                metadata: [
+                    "kind": ChatAttachment.Kind.file.rawValue,
+                    "reason": "fileTooLarge"
+                ]
+            )
+            return
+        }
+
         let attachment = ChatAttachment(
             name: fileURL.lastPathComponent,
             kind: isImage ? .image : .file,
@@ -261,6 +273,8 @@ public final class ChatViewModel {
             "Selected model is unavailable."
         case AttachmentPromptAdapterError.imageTooLarge:
             "Image is too large. Choose one under 20 MB."
+        case AttachmentPromptAdapterError.fileTooLarge:
+            "File is too large. Choose one under 20 MB."
         case AttachmentPromptAdapterError.unreadableImage:
             "Image could not be read."
         default:

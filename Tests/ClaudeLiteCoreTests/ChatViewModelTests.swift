@@ -118,13 +118,12 @@ struct ChatViewModelTests {
             replyText: "ok"
         )
         let viewModel = ChatViewModel(services: services)
+        let fileURL = try writeTemporaryFile(named: "secret-plan.txt", contents: "private file content")
         let imageURL = try writeTemporaryImage(named: "private-photo.png")
 
         try await viewModel.start()
         viewModel.draftText = "private prompt with attachments"
-        viewModel.addAttachment(
-            from: URL(fileURLWithPath: "/private/path/secret-plan.txt")
-        )
+        viewModel.addAttachment(from: fileURL)
         viewModel.addAttachment(from: imageURL)
 
         try await viewModel.send()
@@ -216,6 +215,35 @@ struct ChatViewModelTests {
             entry.event == "attachment_rejected" &&
                 entry.metadata["reason"] == "imageTooLarge" &&
                 entry.metadata["kind"] == "image"
+        })
+    }
+
+    @Test
+    func oversizedFileAttachmentIsRejectedBeforeEnteringDraft() async throws {
+        let services = TestServiceContainer(
+            availableModels: [
+                ClaudeModel(id: "claude-opus-4-7", displayName: "Claude Opus 4.7")
+            ],
+            replyText: "ok"
+        )
+        let viewModel = ChatViewModel(services: services)
+        let fileURL = try writeBinaryFile(
+            named: "huge-report.pdf",
+            byteCount: AttachmentPromptAdapter.maxFileAttachmentBytes + 1
+        )
+
+        try await viewModel.start()
+        viewModel.addAttachment(from: fileURL)
+
+        #expect(viewModel.draftAttachments.isEmpty)
+        #expect(viewModel.errorMessage == "File is too large. Choose one under 20 MB.")
+        #expect(services.logEntries.contains { entry in
+            entry.event == "attachment_rejected" &&
+                entry.metadata["reason"] == "fileTooLarge" &&
+                entry.metadata["kind"] == "file"
+        })
+        #expect(!services.logEntries.contains { entry in
+            entry.metadata.values.contains("huge-report.pdf")
         })
     }
 
@@ -376,6 +404,16 @@ struct ChatViewModelTests {
 
         let fileURL = directory.appending(path: name)
         try Data([0x89, 0x50, 0x4E, 0x47]).write(to: fileURL)
+        return fileURL
+    }
+
+    private func writeTemporaryFile(named name: String, contents: String) throws -> URL {
+        let directory = FileManager.default.temporaryDirectory
+            .appending(path: "ChatViewModelTests-\(UUID().uuidString)", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+
+        let fileURL = directory.appending(path: name)
+        try contents.write(to: fileURL, atomically: true, encoding: .utf8)
         return fileURL
     }
 

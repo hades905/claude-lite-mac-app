@@ -3,6 +3,7 @@ import UniformTypeIdentifiers
 
 enum AttachmentPromptAdapter {
     private static let maxInlineTextFileBytes = 32_000
+    static let maxFileAttachmentBytes = 20 * 1_024 * 1_024
     static let maxImageAttachmentBytes = 20 * 1_024 * 1_024
 
     private static let textExtensions: Set<String> = [
@@ -170,6 +171,10 @@ enum AttachmentPromptAdapter {
     }
 
     static func imageAttachmentIsWithinSizeLimit(_ url: URL) -> Bool {
+        fileAttachmentIsWithinSizeLimit(url)
+    }
+
+    static func fileAttachmentIsWithinSizeLimit(_ url: URL) -> Bool {
         let resolvedURL = url.resolvingSymlinksInPath()
         guard
             let values = try? resolvedURL.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey]),
@@ -179,7 +184,7 @@ enum AttachmentPromptAdapter {
             return false
         }
 
-        return fileSize <= maxImageAttachmentBytes
+        return fileSize <= maxFileAttachmentBytes
     }
 
     private static func mimeType(for url: URL) -> String? {
@@ -202,6 +207,7 @@ enum AttachmentPromptAdapter {
 enum AttachmentPromptAdapterError: Error, Equatable {
     case unreadableImage(String)
     case imageTooLarge(String)
+    case fileTooLarge(String)
 }
 
 private struct ImageAttachmentPayload {
