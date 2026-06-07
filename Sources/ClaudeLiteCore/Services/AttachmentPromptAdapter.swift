@@ -25,7 +25,7 @@ enum AttachmentPromptAdapter {
     }
 
     static func renderMessageContent(for message: ChatMessage) throws -> MessageContent {
-        guard message.attachments.contains(where: { $0.kind == .image }) else {
+        guard message.attachments.contains(where: hasLocalImageAttachment) else {
             return .text(renderMessageText(for: message))
         }
 
@@ -33,8 +33,12 @@ enum AttachmentPromptAdapter {
         for attachment in message.attachments {
             switch attachment.kind {
             case .image:
-                let image = try renderImageAttachment(attachment)
-                blocks.append(.image(mediaType: image.mediaType, data: image.base64Data))
+                if hasLocalImageAttachment(attachment) {
+                    let image = try renderImageAttachment(attachment)
+                    blocks.append(.image(mediaType: image.mediaType, data: image.base64Data))
+                } else {
+                    blocks.append(.text(renderAttachmentSummary(attachment)))
+                }
             case .file:
                 let text = renderAttachmentSummary(attachment)
                 if !text.isEmpty {
@@ -173,6 +177,14 @@ enum AttachmentPromptAdapter {
         }
 
         return ImageAttachmentPayload(mediaType: mediaType, base64Data: data.base64EncodedString())
+    }
+
+    private static func hasLocalImageAttachment(_ attachment: ChatAttachment) -> Bool {
+        guard attachment.kind == .image, let localURL = attachment.localURL, localURL.isFileURL else {
+            return false
+        }
+
+        return true
     }
 
     private static func readSecurityScopedData(from url: URL) throws -> Data {

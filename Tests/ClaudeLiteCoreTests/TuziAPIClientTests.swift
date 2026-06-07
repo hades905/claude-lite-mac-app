@@ -89,6 +89,42 @@ struct TuziAPIClientTests {
         #expect(!requestString.contains("[Image attached:"))
     }
 
+    @Test
+    func sendMessageSummarizesRestoredImageAttachmentWithoutLocalFile() async throws {
+        RecordingURLProtocol.reset()
+
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [RecordingURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        let client = TuziAPIClient(
+            baseURL: URL(string: "https://api.tu-zi.test")!,
+            session: session
+        )
+
+        _ = try await client.sendMessage(
+            conversation: [
+                .user(
+                    text: "Earlier image",
+                    attachments: [
+                        ChatAttachment(name: "chart.png", kind: .image, localURL: nil)
+                    ]
+                ),
+                .assistant(text: "I can see the chart."),
+                .user(text: "Continue from that context.")
+            ],
+            modelID: "claude-3-5-haiku",
+            apiKey: "test-key"
+        )
+
+        let body = try #require(RecordingURLProtocol.lastRequestBody)
+        let json = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
+        let messages = try #require(json["messages"] as? [[String: Any]])
+        let firstMessage = try #require(messages.first)
+
+        #expect(firstMessage["role"] as? String == "user")
+        #expect(firstMessage["content"] as? String == "[Image attached: chart.png]\n\nEarlier image")
+    }
+
     private func writeTemporaryFile(named name: String, data: Data) throws -> URL {
         let directory = FileManager.default.temporaryDirectory
             .appending(path: "TuziAPIClientTests-\(UUID().uuidString)", directoryHint: .isDirectory)
