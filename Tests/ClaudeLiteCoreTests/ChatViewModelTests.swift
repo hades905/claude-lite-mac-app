@@ -431,6 +431,62 @@ struct ChatViewModelTests {
     }
 
     @Test
+    func failedSendRestoresDraftTextAndAttachments() async throws {
+        let services = TestServiceContainer(
+            availableModels: [
+                ClaudeModel(id: "claude-opus-4-7", displayName: "Claude Opus 4.7")
+            ],
+            chatService: FailingChatService(error: TuziAPIError.server("temporary outage"))
+        )
+        let viewModel = ChatViewModel(services: services)
+        let fileURL = try writeTemporaryFile(named: "notes.txt", contents: "small context")
+
+        try await viewModel.start()
+        viewModel.draftText = "please retry this"
+        viewModel.addAttachment(from: fileURL)
+
+        await #expect(throws: TuziAPIError.self) {
+            try await viewModel.send()
+        }
+
+        #expect(viewModel.draftText == "please retry this")
+        #expect(viewModel.draftAttachments.map(\.name) == ["notes.txt"])
+        #expect(viewModel.messages.isEmpty)
+        #expect(viewModel.errorMessage == "Can’t reach server.")
+    }
+
+    @Test
+    func failedSendDoesNotOverwriteNewDraftText() async throws {
+        let chatService = ControlledChatService()
+        let services = TestServiceContainer(
+            availableModels: [
+                ClaudeModel(id: "claude-opus-4-7", displayName: "Claude Opus 4.7")
+            ],
+            chatService: chatService
+        )
+        let viewModel = ChatViewModel(services: services)
+
+        try await viewModel.start()
+        viewModel.draftText = "message that fails"
+
+        let sendTask = Task {
+            try await viewModel.send()
+        }
+
+        await waitUntilSending(viewModel)
+        viewModel.draftText = "new draft"
+
+        await chatService.failAll(with: TuziAPIError.server("temporary outage"))
+        await #expect(throws: TuziAPIError.self) {
+            try await sendTask.value
+        }
+
+        #expect(viewModel.draftText == "new draft")
+        #expect(viewModel.messages.isEmpty)
+        #expect(viewModel.errorMessage == "Can’t reach server.")
+    }
+
+    @Test
     func sendShowsPendingAssistantMessageUntilReplyArrives() async throws {
         let chatService = ControlledChatService()
         let services = TestServiceContainer(
@@ -635,6 +691,10 @@ private final class ControlledChatService: ChatServing, @unchecked Sendable {
         await state.resumeAll(with: reply)
     }
 
+    func failAll(with error: Error) async {
+        await state.failAll(with: error)
+    }
+
     func recordedConversations() async -> [[ChatMessage]] {
         await state.recordedConversations
     }
@@ -683,6 +743,12 @@ private actor ControlledChatServiceState {
         let continuations = self.continuations
         self.continuations = []
         continuations.forEach { $0.resume(returning: reply) }
+    }
+
+    func failAll(with error: Error) {
+        let continuations = self.continuations
+        self.continuations = []
+        continuations.forEach { $0.resume(throwing: error) }
     }
 }
 

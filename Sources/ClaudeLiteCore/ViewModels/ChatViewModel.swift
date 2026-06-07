@@ -248,11 +248,12 @@ public final class ChatViewModel {
                 )
             )
         } catch {
-            replaceMessage(
-                id: outgoing.id,
-                with: outgoingForRequest.replacing(status: .sent)
-            )
-            messages.removeAll { $0.id == pendingReplyID }
+            let shouldRestoreFailedDraft = draftText.isEmpty && draftAttachments.isEmpty
+            messages.removeAll { $0.id == outgoing.id || $0.id == pendingReplyID }
+            if shouldRestoreFailedDraft {
+                draftText = outgoingForRequest.text
+                draftAttachments = outgoingForRequest.attachments
+            }
             errorMessage = readableMessage(for: error)
             if !isLocalAttachmentError(error) {
                 connectionStatus = .disconnected
