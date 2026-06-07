@@ -275,6 +275,29 @@ struct ChatViewModelTests {
     }
 
     @Test
+    func validAttachmentClearsPreviousAttachmentError() async throws {
+        let services = TestServiceContainer(
+            availableModels: [
+                ClaudeModel(id: "claude-opus-4-7", displayName: "Claude Opus 4.7")
+            ],
+            replyText: "ok"
+        )
+        let viewModel = ChatViewModel(services: services)
+        let oversizedURL = try writeBinaryFile(
+            named: "huge-report.pdf",
+            byteCount: AttachmentPromptAdapter.maxFileAttachmentBytes + 1
+        )
+        let validURL = try writeTemporaryFile(named: "notes.txt", contents: "small context")
+
+        try await viewModel.start()
+        viewModel.addAttachment(from: oversizedURL)
+        viewModel.addAttachment(from: validURL)
+
+        #expect(viewModel.draftAttachments.map(\.name) == ["notes.txt"])
+        #expect(viewModel.errorMessage == nil)
+    }
+
+    @Test
     func sendWithoutModelAPIKeyShowsReadableErrorAndSafeDiagnostics() async throws {
         let services = TestServiceContainer(
             availableModels: [

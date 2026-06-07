@@ -134,6 +134,7 @@ public final class ChatViewModel {
             kind: isImage ? .image : .file,
             localURL: fileURL
         )
+        errorMessage = nil
         draftAttachments.append(attachment)
     }
 
