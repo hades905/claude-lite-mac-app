@@ -77,5 +77,13 @@ struct LauncherCommandTests {
         #expect(script.contains("cleanup_build_cache()"))
         #expect(script.contains("trap cleanup_build_cache EXIT"))
         #expect(script.contains("rm -rf \"$ROOT_DIR/.build\""))
+        #expect(script.contains("MAX_SMOKE_START_MS=5000"))
+        #expect(script.contains("MAX_SMOKE_SEND_MS=5000"))
+        #expect(script.contains("MAX_SMOKE_RSS_MB=100"))
+        #expect(script.contains("assert_metric_under_limit"))
+        #expect(script.contains("SMOKE_OUTPUT=\"$(swift run ClaudeLiteSmoke)\""))
+        #expect(script.contains("start_ms"))
+        #expect(script.contains("send_ms"))
+        #expect(script.contains("rss_mb"))
     }
 }

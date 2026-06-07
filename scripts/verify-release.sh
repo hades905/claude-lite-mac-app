@@ -4,6 +4,9 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 APP_PATH="$ROOT_DIR/dist/问.app"
 MAX_APP_BYTES=$((100 * 1024 * 1024))
+MAX_SMOKE_START_MS=5000
+MAX_SMOKE_SEND_MS=5000
+MAX_SMOKE_RSS_MB=100
 
 cleanup_build_cache() {
   rm -rf "$ROOT_DIR/.build"
@@ -13,12 +16,38 @@ cleanup_build_cache() {
   rm -rf "$ROOT_DIR/DerivedData"
 }
 
+metric_value() {
+  local name="$1"
+  echo "$SMOKE_OUTPUT" | awk -F= -v key="$name" '$1 == key { print $2; exit }'
+}
+
+assert_metric_under_limit() {
+  local name="$1"
+  local limit="$2"
+  local value
+  value="$(metric_value "$name")"
+
+  if [[ -z "$value" ]]; then
+    echo "Smoke output missing metric: $name" >&2
+    exit 1
+  fi
+
+  if (( value > limit )); then
+    echo "Smoke metric $name=$value exceeds limit $limit." >&2
+    exit 1
+  fi
+}
+
 trap cleanup_build_cache EXIT
 
 cd "$ROOT_DIR"
 
 echo "== Offline smoke =="
-swift run ClaudeLiteSmoke
+SMOKE_OUTPUT="$(swift run ClaudeLiteSmoke)"
+echo "$SMOKE_OUTPUT"
+assert_metric_under_limit "start_ms" "$MAX_SMOKE_START_MS"
+assert_metric_under_limit "send_ms" "$MAX_SMOKE_SEND_MS"
+assert_metric_under_limit "rss_mb" "$MAX_SMOKE_RSS_MB"
 
 echo "== Tests =="
 swift test
