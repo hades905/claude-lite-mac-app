@@ -4,6 +4,33 @@ import Testing
 
 struct LiveServiceContainerTests {
     @Test
+    func liveServicesUseBootstrapBaseURLForNetworkRequests() async throws {
+        LiveBaseURLRecordingURLProtocol.reset()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [LiveBaseURLRecordingURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        let appSupportURL = try TestSupport.makeTemporaryDirectory()
+        let configURL = appSupportURL.appending(path: ".local/tuzi-config.json")
+        try FileManager.default.createDirectory(at: configURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try """
+        {
+          "modelApiKey": "test-model-key",
+          "userApiKey": "test-user-key",
+          "defaultModel": "claude-opus-4-6",
+          "baseURL": "https://configured.tu-zi.test"
+        }
+        """.write(to: configURL, atomically: true, encoding: .utf8)
+
+        let services = LiveServiceContainer.live(appSupportURL: appSupportURL, apiSession: session)
+
+        _ = try await services.modelService.fetchClaudeModels(apiKey: "test-model-key")
+
+        let url = try #require(LiveBaseURLRecordingURLProtocol.lastURL)
+        #expect(url.host == "configured.tu-zi.test")
+        #expect(url.path == "/v1/models")
+    }
+
+    @Test
     func liveStartupLogsStoragePruneResultWithoutPaths() throws {
         let appSupportURL = try TestSupport.makeTemporaryDirectory()
         let protectedSessionURL = appSupportURL.appending(path: "session.json")
@@ -122,5 +149,62 @@ struct LiveServiceContainerTests {
             [.modificationDate: date],
             ofItemAtPath: url.path(percentEncoded: false)
         )
+    }
+}
+
+private final class LiveBaseURLRecordingURLProtocol: URLProtocol, @unchecked Sendable {
+    private static let store = LiveBaseURLRecordedRequestStore()
+
+    static var lastURL: URL? {
+        store.url
+    }
+
+    static func reset() {
+        store.reset()
+    }
+
+    override class func canInit(with request: URLRequest) -> Bool {
+        request.url?.scheme == "https"
+    }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest {
+        request
+    }
+
+    override func startLoading() {
+        Self.store.record(request.url)
+        let data = Data(#"{"data":[{"id":"claude-opus-4-6"}]}"#.utf8)
+        let response = HTTPURLResponse(
+            url: request.url!,
+            statusCode: 200,
+            httpVersion: nil,
+            headerFields: ["Content-Type": "application/json"]
+        )!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: data)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
+}
+
+private final class LiveBaseURLRecordedRequestStore: @unchecked Sendable {
+    private let lock = NSLock()
+    private var recordedURL: URL?
+
+    var url: URL? {
+        lock.withLock { recordedURL }
+    }
+
+    func record(_ url: URL?) {
+        lock.withLock {
+            recordedURL = url
+        }
+    }
+
+    func reset() {
+        lock.withLock {
+            recordedURL = nil
+        }
     }
 }

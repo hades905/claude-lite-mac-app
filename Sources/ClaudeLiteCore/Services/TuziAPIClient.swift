@@ -1,6 +1,8 @@
 import Foundation
 
 public final class TuziAPIClient: Sendable {
+    public static let defaultBaseURL = URL(string: "https://api.tu-zi.com")!
+
     private let baseURL: URL
     private let session: URLSession
 
@@ -16,7 +18,7 @@ public final class TuziAPIClient: Sendable {
         session.configuration.timeoutIntervalForResource
     }
 
-    public convenience init(baseURL: URL = URL(string: "https://api.tu-zi.com")!) {
+    public convenience init(baseURL: URL = defaultBaseURL) {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.urlCache = nil
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData

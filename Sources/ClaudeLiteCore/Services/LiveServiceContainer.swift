@@ -30,7 +30,8 @@ public struct LiveServiceContainer: ClaudeLiteServiceContainer {
 
     public static func live(
         appSupportURL: URL? = nil,
-        storageLimitBytes: Int = AppSupportStoragePruner.defaultMaxTotalBytes
+        storageLimitBytes: Int = AppSupportStoragePruner.defaultMaxTotalBytes,
+        apiSession: URLSession? = nil
     ) -> LiveServiceContainer {
         let fileManager = FileManager.default
         let currentDirectory = URL(fileURLWithPath: fileManager.currentDirectoryPath, isDirectory: true)
@@ -55,7 +56,13 @@ public struct LiveServiceContainer: ClaudeLiteServiceContainer {
             )
         )
         let secureStore = NoopSecureStore()
-        let apiClient = TuziAPIClient()
+        let baseURL = (try? bootstrapLoader.loadBootstrapConfiguration()?.baseURL) ?? TuziAPIClient.defaultBaseURL
+        let apiClient: TuziAPIClient
+        if let apiSession {
+            apiClient = TuziAPIClient(baseURL: baseURL, session: apiSession)
+        } else {
+            apiClient = TuziAPIClient(baseURL: baseURL)
+        }
         let modelService = LiveModelService(apiClient: apiClient)
         let connectionService = LiveConnectionService(apiClient: apiClient)
         let chatService = LiveChatService(apiClient: apiClient)
@@ -119,7 +126,11 @@ public struct LiveServiceContainer: ClaudeLiteServiceContainer {
             return [appResourceURL]
         }
 
-        var roots: [URL] = [currentDirectory]
+        var roots: [URL] = []
+        if let appSupportURL {
+            roots.append(appSupportURL)
+        }
+        roots.append(currentDirectory)
         let bundleParent = bundleURL.deletingLastPathComponent()
         let bundleGrandparent = bundleParent.deletingLastPathComponent()
 
