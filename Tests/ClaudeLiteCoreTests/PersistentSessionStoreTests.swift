@@ -111,4 +111,18 @@ struct PersistentSessionStoreTests {
         #expect(restored.messages.first?.status == .sent)
         #expect(restored.messages.first?.text == "legacy reply")
     }
+
+    @Test
+    func corruptedSessionLoadsEmptySnapshotAndClearsBadFile() throws {
+        let directory = try TestSupport.makeTemporaryDirectory()
+        let fileURL = directory.appending(path: "session.json")
+        let store = PersistentSessionStore(fileURL: fileURL)
+
+        try "{ not valid json".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let restored = try store.load()
+
+        #expect(restored == .empty)
+        #expect(!FileManager.default.fileExists(atPath: fileURL.path(percentEncoded: false)))
+    }
 }

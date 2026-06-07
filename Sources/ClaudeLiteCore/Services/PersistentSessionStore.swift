@@ -16,7 +16,12 @@ public final class PersistentSessionStore: SessionStoring {
         }
 
         let data = try Data(contentsOf: fileURL)
-        return try decoder.decode(SessionSnapshot.self, from: data)
+        do {
+            return try decoder.decode(SessionSnapshot.self, from: data)
+        } catch is DecodingError {
+            try? FileManager.default.removeItem(at: fileURL)
+            return .empty
+        }
     }
 
     public func save(_ snapshot: SessionSnapshot) throws {
