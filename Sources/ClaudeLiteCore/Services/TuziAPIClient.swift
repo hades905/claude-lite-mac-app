@@ -8,10 +8,20 @@ public final class TuziAPIClient: Sendable {
         session.configuration.urlCache != nil
     }
 
+    public var requestTimeoutSeconds: TimeInterval {
+        session.configuration.timeoutIntervalForRequest
+    }
+
+    public var resourceTimeoutSeconds: TimeInterval {
+        session.configuration.timeoutIntervalForResource
+    }
+
     public convenience init(baseURL: URL = URL(string: "https://api.tu-zi.com")!) {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.urlCache = nil
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        configuration.timeoutIntervalForRequest = 30
+        configuration.timeoutIntervalForResource = 45
         self.init(baseURL: baseURL, session: URLSession(configuration: configuration))
     }
 

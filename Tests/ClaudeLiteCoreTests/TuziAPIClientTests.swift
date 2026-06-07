@@ -12,6 +12,14 @@ struct TuziAPIClientTests {
     }
 
     @Test
+    func defaultClientUsesShortNetworkTimeouts() {
+        let client = TuziAPIClient()
+
+        #expect(client.requestTimeoutSeconds == 30)
+        #expect(client.resourceTimeoutSeconds == 45)
+    }
+
+    @Test
     func sendMessageDoesNotSetLocalMaxTokenCap() async throws {
         RecordingURLProtocol.reset()
 
