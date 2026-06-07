@@ -169,7 +169,7 @@ enum AttachmentPromptAdapter {
         return try Data(contentsOf: url)
     }
 
-    private static func imageAttachmentIsWithinSizeLimit(_ url: URL) -> Bool {
+    static func imageAttachmentIsWithinSizeLimit(_ url: URL) -> Bool {
         let resolvedURL = url.resolvingSymlinksInPath()
         guard
             let values = try? resolvedURL.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey]),

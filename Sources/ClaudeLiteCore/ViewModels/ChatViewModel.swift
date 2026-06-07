@@ -98,6 +98,18 @@ public final class ChatViewModel {
 
     public func addAttachment(from fileURL: URL) {
         let isImage = ["png", "jpg", "jpeg", "gif", "webp", "heic"].contains(fileURL.pathExtension.lowercased())
+        if isImage, !AttachmentPromptAdapter.imageAttachmentIsWithinSizeLimit(fileURL) {
+            errorMessage = readableMessage(for: AttachmentPromptAdapterError.imageTooLarge(fileURL.lastPathComponent))
+            log(
+                event: "attachment_rejected",
+                metadata: [
+                    "kind": ChatAttachment.Kind.image.rawValue,
+                    "reason": "imageTooLarge"
+                ]
+            )
+            return
+        }
+
         let attachment = ChatAttachment(
             name: fileURL.lastPathComponent,
             kind: isImage ? .image : .file,
