@@ -38,7 +38,7 @@ public final class PersistentSessionStore: SessionStoring {
             at: fileURL.deletingLastPathComponent(),
             withIntermediateDirectories: true
         )
-        let data = try encoder.encode(snapshot)
+        let data = try encoder.encode(SessionSnapshotTrimmer.trim(snapshot))
         try data.write(to: fileURL, options: .atomic)
     }
 
