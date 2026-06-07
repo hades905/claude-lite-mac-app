@@ -89,6 +89,35 @@ struct RotatingAppLoggerTests {
     }
 
     @Test
+    func loggerRedactsTokenLikeParametersInsideSafeMetadataValues() throws {
+        let directory = try TestSupport.makeTemporaryDirectory()
+        let logger = RotatingAppLogger(
+            directoryURL: directory,
+            fileName: "app.log",
+            maxFileBytes: 4_096,
+            maxTotalBytes: 8_192
+        )
+        let token = "secret-token-123456"
+        let apiKey = "private-api-key-abcdef"
+        let basicAuth = "Basic " + "dXNlcjpwYXNzd29yZA=="
+
+        try logger.record(
+            event: "network_failed",
+            metadata: [
+                "error": "url failed ?token=\(token)&api_key=\(apiKey) header \(basicAuth)"
+            ]
+        )
+
+        let log = try String(contentsOf: directory.appending(path: "app.log"), encoding: .utf8)
+
+        #expect(log.contains("token=<redacted>"))
+        #expect(log.contains("api_key=<redacted>"))
+        #expect(!log.contains(token))
+        #expect(!log.contains(apiKey))
+        #expect(!log.contains(basicAuth))
+    }
+
+    @Test
     func loggerRedactsLocalPathsInsideSafeMetadataValues() throws {
         let directory = try TestSupport.makeTemporaryDirectory()
         let logger = RotatingAppLogger(

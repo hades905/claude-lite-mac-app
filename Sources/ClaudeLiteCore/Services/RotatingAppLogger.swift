@@ -87,18 +87,25 @@ public final class RotatingAppLogger: AppLogging, @unchecked Sendable {
         var redacted = value
         let patterns = [
             #"Bearer [A-Za-z0-9._-]{12,}"#,
-            #"sk-[A-Za-z0-9_-]{12,}"#
+            #"Basic [A-Za-z0-9+/=_-]{12,}"#,
+            #"sk-[A-Za-z0-9_-]{12,}"#,
+            #"(?i)([?&](?:api[_-]?key|token|access[_-]?token|auth(?:orization)?)=)[^&\s]+"#,
+            #"(?i)\b((?:api[_-]?key|token|access[_-]?token|auth(?:orization)?)=)[^&\s]+"#
         ]
 
         for pattern in patterns {
             redacted = redacted.replacingOccurrences(
                 of: pattern,
-                with: "<redacted>",
+                with: replacement(forSensitiveTokenPattern: pattern),
                 options: .regularExpression
             )
         }
 
         return redacted
+    }
+
+    private func replacement(forSensitiveTokenPattern pattern: String) -> String {
+        pattern.contains("=)") ? "$1<redacted>" : "<redacted>"
     }
 
     private func redactLocalPaths(in value: String) -> String {
