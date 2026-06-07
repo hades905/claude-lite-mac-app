@@ -59,11 +59,11 @@ public struct ChatMessage: Codable, Equatable, Identifiable, Sendable {
         )
     }
 
-    public func replacing(id: UUID? = nil, status: Status? = nil) -> ChatMessage {
+    public func replacing(id: UUID? = nil, text: String? = nil, status: Status? = nil) -> ChatMessage {
         ChatMessage(
             id: id ?? self.id,
             role: role,
-            text: text,
+            text: text ?? self.text,
             attachments: attachments,
             createdAt: createdAt,
             status: status ?? self.status
