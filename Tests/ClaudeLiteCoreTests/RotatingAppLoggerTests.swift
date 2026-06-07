@@ -33,6 +33,33 @@ struct RotatingAppLoggerTests {
     }
 
     @Test
+    func loggerRedactsSensitiveTokensInsideSafeMetadataValues() throws {
+        let directory = try TestSupport.makeTemporaryDirectory()
+        let logger = RotatingAppLogger(
+            directoryURL: directory,
+            fileName: "app.log",
+            maxFileBytes: 4_096,
+            maxTotalBytes: 8_192
+        )
+        let bearerToken = "Bearer " + "abc.def_123-456"
+        let apiKey = "sk-" + "test_1234567890abcd"
+
+        try logger.record(
+            event: "network_failed",
+            metadata: [
+                "error": "request failed with \(bearerToken) and \(apiKey)"
+            ]
+        )
+
+        let log = try String(contentsOf: directory.appending(path: "app.log"), encoding: .utf8)
+
+        #expect(log.contains("network_failed"))
+        #expect(log.contains("error=request failed with <redacted> and <redacted>"))
+        #expect(!log.contains(bearerToken))
+        #expect(!log.contains(apiKey))
+    }
+
+    @Test
     func loggerKeepsTotalSizeUnderLimit() throws {
         let directory = try TestSupport.makeTemporaryDirectory()
         let logger = RotatingAppLogger(

@@ -73,7 +73,7 @@ public final class RotatingAppLogger: AppLogging, @unchecked Sendable {
             return "<redacted>"
         }
 
-        return sanitize(value)
+        return redactSensitiveTokens(in: sanitize(value))
     }
 
     private func sanitize(_ value: String) -> String {
@@ -81,6 +81,24 @@ public final class RotatingAppLogger: AppLogging, @unchecked Sendable {
             .replacingOccurrences(of: "\n", with: " ")
             .replacingOccurrences(of: "\r", with: " ")
             .replacingOccurrences(of: "\t", with: " ")
+    }
+
+    private func redactSensitiveTokens(in value: String) -> String {
+        var redacted = value
+        let patterns = [
+            #"Bearer [A-Za-z0-9._-]{12,}"#,
+            #"sk-[A-Za-z0-9_-]{12,}"#
+        ]
+
+        for pattern in patterns {
+            redacted = redacted.replacingOccurrences(
+                of: pattern,
+                with: "<redacted>",
+                options: .regularExpression
+            )
+        }
+
+        return redacted
     }
 
     private func append(_ line: String, to url: URL) throws {
