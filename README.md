@@ -13,6 +13,7 @@
 - 提供脚本生成 app 图标并打包为可双击运行的 `.app`。
 - 本地日志自动脱敏和轮转，日志总量控制在 100MB 以内。
 - 会话记录自动保留最近内容，避免长对话无限增大本地数据。
+- Markdown 临时渲染文件会自动清理，防止崩溃或强退后留下不断增长的缓存。
 
 ## 项目结构
 
@@ -87,7 +88,7 @@ Tuzi 网关 HTTP 客户端。负责请求模型列表和发送 Claude 消息。
 
 `Sources/ClaudeLiteCore/Rendering/MarkdownHTMLDocument.swift`
 
-生成用于渲染 Markdown 的 HTML。内嵌 `marked` 和 MathJax 资源，支持多行文本、标题、加粗、列表、代码块、表格和公式。
+生成用于渲染 Markdown 的 HTML。内嵌 `marked` 和 MathJax 资源，支持多行文本、标题、加粗、列表、代码块、表格和公式。临时渲染目录会按 100MB 上限自动清理。
 
 `Sources/ClaudeLiteMacApp/MarkdownMessageView.swift`
 

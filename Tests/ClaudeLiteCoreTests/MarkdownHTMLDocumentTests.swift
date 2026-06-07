@@ -69,6 +69,49 @@ struct MarkdownHTMLDocumentTests {
     }
 
     @Test
+    func prunesTemporaryRenderingFilesToTotalSizeLimit() throws {
+        let directory = try TestSupport.makeTemporaryDirectory()
+        let oldFile = directory.appending(path: "old.html")
+        let middleFile = directory.appending(path: "middle.html")
+        let newestFile = directory.appending(path: "newest.html")
+
+        try Data(repeating: 1, count: 700).write(to: oldFile)
+        try Data(repeating: 2, count: 500).write(to: middleFile)
+        try Data(repeating: 3, count: 300).write(to: newestFile)
+
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date(timeIntervalSince1970: 1)],
+            ofItemAtPath: oldFile.path(percentEncoded: false)
+        )
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date(timeIntervalSince1970: 2)],
+            ofItemAtPath: middleFile.path(percentEncoded: false)
+        )
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date(timeIntervalSince1970: 3)],
+            ofItemAtPath: newestFile.path(percentEncoded: false)
+        )
+
+        try MarkdownHTMLDocument.pruneTemporaryRenderingFiles(
+            in: directory,
+            maxTotalBytes: 900
+        )
+
+        let remainingFiles = try FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: [.fileSizeKey]
+        )
+        let totalBytes = try remainingFiles.reduce(0) { partial, url in
+            let values = try url.resourceValues(forKeys: [.fileSizeKey])
+            return partial + (values.fileSize ?? 0)
+        }
+
+        #expect(totalBytes <= 900)
+        #expect(!FileManager.default.fileExists(atPath: oldFile.path(percentEncoded: false)))
+        #expect(FileManager.default.fileExists(atPath: newestFile.path(percentEncoded: false)))
+    }
+
+    @Test
     func embedsMarkedRuntimeOutsideProjectDirectory() throws {
         let tempDirectory = try TestSupport.makeTemporaryDirectory()
         let packageRoot = URL(fileURLWithPath: #filePath)

@@ -2,6 +2,7 @@ import Foundation
 
 public enum MarkdownHTMLDocument {
     private static let renderingDirectoryName = "claude-lite-markdown-renderer"
+    private static let maxTemporaryRenderingBytes = 100 * 1_024 * 1_024
     private static let markedRuntime = loadJavaScriptAsset(named: "marked.min")
     private static let mathJaxRuntime = loadJavaScriptAsset(named: "tex-svg")
 
@@ -242,13 +243,41 @@ public enum MarkdownHTMLDocument {
 
     public static func writeTemporaryFile(for markdown: String) throws -> URL {
         let directoryURL = try preparedRenderingDirectory()
+        try pruneTemporaryRenderingFiles(in: directoryURL, maxTotalBytes: maxTemporaryRenderingBytes)
         let fileURL = directoryURL.appending(path: "\(UUID().uuidString).html")
         try makeHTML(for: markdown).write(to: fileURL, atomically: true, encoding: .utf8)
+        try pruneTemporaryRenderingFiles(in: directoryURL, maxTotalBytes: maxTemporaryRenderingBytes)
         return fileURL
     }
 
     public static func cleanupTemporaryFile(at fileURL: URL) {
         try? FileManager.default.removeItem(at: fileURL)
+    }
+
+    public static func pruneTemporaryRenderingFiles(
+        in directoryURL: URL,
+        maxTotalBytes: Int
+    ) throws {
+        let fileManager = FileManager.default
+        guard fileManager.fileExists(atPath: directoryURL.path(percentEncoded: false)) else {
+            return
+        }
+
+        var htmlFiles = try fileManager.contentsOfDirectory(
+            at: directoryURL,
+            includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey]
+        ).filter { $0.pathExtension == "html" }
+
+        while totalFileSize(of: htmlFiles) > maxTotalBytes {
+            guard let oldest = try htmlFiles.min(by: { lhs, rhs in
+                try modificationDate(lhs) < modificationDate(rhs)
+            }) else {
+                return
+            }
+
+            try? fileManager.removeItem(at: oldest)
+            htmlFiles.removeAll { $0 == oldest }
+        }
     }
 
     public static func containsSupportedMath(in markdown: String) -> Bool {
@@ -425,6 +454,24 @@ public enum MarkdownHTMLDocument {
             try fileManager.createDirectory(at: directoryURL, withIntermediateDirectories: true)
         }
         return directoryURL
+    }
+
+    private static func totalFileSize(of urls: [URL]) -> Int {
+        urls.reduce(0) { partial, url in
+            guard
+                let values = try? url.resourceValues(forKeys: [.fileSizeKey]),
+                let fileSize = values.fileSize
+            else {
+                return partial
+            }
+
+            return partial + fileSize
+        }
+    }
+
+    private static func modificationDate(_ url: URL) throws -> Date {
+        let values = try url.resourceValues(forKeys: [.contentModificationDateKey])
+        return values.contentModificationDate ?? .distantPast
     }
 
     private static func loadJavaScriptAsset(named name: String) -> String {
