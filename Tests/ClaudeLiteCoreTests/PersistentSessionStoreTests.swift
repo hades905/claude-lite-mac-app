@@ -71,6 +71,30 @@ struct PersistentSessionStoreTests {
     }
 
     @Test
+    func saveRespectsConfiguredSessionFileLimit() throws {
+        let directory = try TestSupport.makeTemporaryDirectory()
+        let fileURL = directory.appending(path: "session.json")
+        let store = PersistentSessionStore(fileURL: fileURL, maxSessionFileBytes: 8_000)
+        let snapshot = SessionSnapshot(
+            messages: (0..<200).map { index in
+                ChatMessage.user(text: "message-\(index) " + String(repeating: "private ", count: 1_000))
+            },
+            selectedModelID: "claude-opus-4-7",
+            lastConnectionStatus: .connected
+        )
+
+        try store.save(snapshot)
+
+        let savedSize = try #require(fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize)
+        let restored = try store.load()
+        #expect(savedSize <= 8_000)
+        #expect(restored.messages.count > 0)
+        #expect(restored.messages.count < snapshot.messages.count)
+        #expect(restored.selectedModelID == "claude-opus-4-7")
+        #expect(restored.lastConnectionStatus == .connected)
+    }
+
+    @Test
     func savedSessionDoesNotPersistAttachmentLocalFilePath() throws {
         let directory = try TestSupport.makeTemporaryDirectory()
         let fileURL = directory.appending(path: "session.json")

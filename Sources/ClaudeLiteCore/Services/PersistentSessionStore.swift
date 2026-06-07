@@ -38,8 +38,42 @@ public final class PersistentSessionStore: SessionStoring {
             at: fileURL.deletingLastPathComponent(),
             withIntermediateDirectories: true
         )
-        let data = try encoder.encode(SessionSnapshotTrimmer.trim(snapshot))
+        let data = try encodedSnapshotWithinLimit(snapshot)
         try data.write(to: fileURL, options: .atomic)
+    }
+
+    private func encodedSnapshotWithinLimit(_ snapshot: SessionSnapshot) throws -> Data {
+        var maxMessages = SessionSnapshotTrimmer.defaultMaxMessages
+        var maxMessageTextCharacters = SessionSnapshotTrimmer.defaultMaxMessageTextCharacters
+        var maxTotalTextCharacters = SessionSnapshotTrimmer.defaultMaxTotalTextCharacters
+
+        while true {
+            let trimmed = SessionSnapshotTrimmer.trim(
+                snapshot,
+                maxMessages: maxMessages,
+                maxMessageTextCharacters: maxMessageTextCharacters,
+                maxTotalTextCharacters: maxTotalTextCharacters
+            )
+            let data = try encoder.encode(trimmed)
+            guard data.count > maxSessionFileBytes, !trimmed.messages.isEmpty else {
+                return data
+            }
+
+            if maxMessages > 1 {
+                maxMessages = max(1, maxMessages / 2)
+            } else if maxTotalTextCharacters > 0 {
+                maxTotalTextCharacters /= 2
+                maxMessageTextCharacters = min(maxMessageTextCharacters, maxTotalTextCharacters)
+            } else {
+                return try encoder.encode(
+                    SessionSnapshot(
+                        messages: [],
+                        selectedModelID: snapshot.selectedModelID,
+                        lastConnectionStatus: snapshot.lastConnectionStatus
+                    )
+                )
+            }
+        }
     }
 
     private func fileSize() -> Int {
