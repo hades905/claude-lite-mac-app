@@ -90,8 +90,35 @@ public final class TuziAPIClient: Sendable {
         }
 
         guard (200 ..< 300).contains(httpResponse.statusCode) else {
-            let message = String(data: data, encoding: .utf8) ?? "Unknown error"
-            throw TuziAPIError.server(message)
+            throw TuziAPIError.server(Self.sanitizedServerErrorMessage(from: data))
+        }
+    }
+
+    private static func sanitizedServerErrorMessage(from data: Data) -> String {
+        let raw = String(data: data.prefix(2_048), encoding: .utf8) ?? "Unknown error"
+        let normalized = raw
+            .replacingOccurrences(of: "\n", with: " ")
+            .replacingOccurrences(of: "\r", with: " ")
+            .replacingOccurrences(of: "\t", with: " ")
+        let redacted = Self.redactSecrets(in: normalized)
+
+        return String(redacted.prefix(600))
+    }
+
+    private static func redactSecrets(in text: String) -> String {
+        let patterns: [(String, String)] = [
+            (#"(?i)\b(token|api[_-]?key|access[_-]?token|refresh[_-]?token|secret|password)\s*=\s*[^\s&"']+"#, "$1=<redacted>"),
+            (#"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]{12,}"#, "Bearer <redacted>"),
+            (#"(?i)\bBasic\s+[A-Za-z0-9._~+/=-]{12,}"#, "Basic <redacted>"),
+            (#"\bsk-[A-Za-z0-9_-]{12,}"#, "sk-<redacted>")
+        ]
+
+        return patterns.reduce(text) { result, pattern in
+            result.replacingOccurrences(
+                of: pattern.0,
+                with: pattern.1,
+                options: .regularExpression
+            )
         }
     }
 }

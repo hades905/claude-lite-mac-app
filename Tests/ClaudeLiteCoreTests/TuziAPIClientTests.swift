@@ -125,6 +125,39 @@ struct TuziAPIClientTests {
         #expect(firstMessage["content"] as? String == "[Image attached: chart.png]\n\nEarlier image")
     }
 
+    @Test
+    func serverErrorMessageIsRedactedAndBounded() async throws {
+        RecordingURLProtocol.reset()
+        RecordingURLProtocol.responseStatusCode = 500
+        RecordingURLProtocol.responseBody = Data(
+            ("server failed token=secret-token-123456 " + String(repeating: "x", count: 4_000)).utf8
+        )
+        defer {
+            RecordingURLProtocol.reset()
+        }
+
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [RecordingURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        let client = TuziAPIClient(
+            baseURL: URL(string: "https://api.tu-zi.test")!,
+            session: session
+        )
+
+        do {
+            _ = try await client.sendMessage(
+                conversation: [.user(text: "hello")],
+                modelID: "claude-3-5-haiku",
+                apiKey: "test-key"
+            )
+            Issue.record("Expected server error")
+        } catch TuziAPIError.server(let message) {
+            #expect(message.contains("token=<redacted>"))
+            #expect(!message.contains("secret-token-123456"))
+            #expect(message.count <= 600)
+        }
+    }
+
     private func writeTemporaryFile(named name: String, data: Data) throws -> URL {
         let directory = FileManager.default.temporaryDirectory
             .appending(path: "TuziAPIClientTests-\(UUID().uuidString)", directoryHint: .isDirectory)
@@ -143,6 +176,16 @@ private final class RecordingURLProtocol: URLProtocol, @unchecked Sendable {
         store.requestBody
     }
 
+    static var responseStatusCode: Int {
+        get { store.responseStatusCode }
+        set { store.responseStatusCode = newValue }
+    }
+
+    static var responseBody: Data {
+        get { store.responseBody }
+        set { store.responseBody = newValue }
+    }
+
     static func reset() {
         store.reset()
     }
@@ -158,10 +201,10 @@ private final class RecordingURLProtocol: URLProtocol, @unchecked Sendable {
     override func startLoading() {
         Self.store.record(requestBody(from: request))
 
-        let data = Data(#"{"content":[{"type":"text","text":"ok"}]}"#.utf8)
+        let data = Self.responseBody
         let response = HTTPURLResponse(
             url: request.url!,
-            statusCode: 200,
+            statusCode: Self.responseStatusCode,
             httpVersion: nil,
             headerFields: ["Content-Type": "application/json"]
         )!
@@ -203,14 +246,28 @@ private final class RecordingURLProtocol: URLProtocol, @unchecked Sendable {
 private final class RecordedRequestStore: @unchecked Sendable {
     private let lock = NSLock()
     private var body: Data?
+    private var statusCode = 200
+    private var bodyData = Data(#"{"content":[{"type":"text","text":"ok"}]}"#.utf8)
 
     var requestBody: Data? {
         lock.withLock { body }
     }
 
+    var responseStatusCode: Int {
+        get { lock.withLock { statusCode } }
+        set { lock.withLock { statusCode = newValue } }
+    }
+
+    var responseBody: Data {
+        get { lock.withLock { bodyData } }
+        set { lock.withLock { bodyData = newValue } }
+    }
+
     func reset() {
         lock.withLock {
             body = nil
+            statusCode = 200
+            bodyData = Data(#"{"content":[{"type":"text","text":"ok"}]}"#.utf8)
         }
     }
 
