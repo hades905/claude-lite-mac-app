@@ -6,6 +6,10 @@ Claude Lite currently renders Markdown in a `WKWebView` using bundled local copi
 
 Microsoft's `SwiftStreamingMarkdown` is a new MIT-licensed SwiftUI package focused on streaming Markdown for chat and LLM interfaces. Its current public README describes support for a CommonMark/GitHub-style core subset, LaTeX, theming, and event tracking, with a release around v0.1.0. The README also lists unsupported or incomplete areas such as Markdown images, task lists, footnotes, and Mermaid. The package is expected to add about 3 MB to the app download size.
 
+A macOS dependency probe on June 13, 2026 found that the upstream package cannot be added directly to this macOS app yet. The upstream package manifest declares only iOS as a supported platform, while SwiftPM reports the library as requiring macOS 10.13 and its dependencies require higher macOS versions: `Equatable` requires macOS 10.15, `HighlightSwift` requires macOS 13.0, and `iosMath` requires macOS 11.0. The direct probe failed before compiling app code.
+
+A second local-only probe patched `SwiftStreamingMarkdown` to declare `.macOS(.v14)` and patched `HighlightSwift` to avoid SwiftUI package macro failures from `@Entry` and `#Preview`. That probe advanced further, but then failed inside `SwiftStreamingMarkdown` because the library imports UIKit and uses many UIKit-only types, including `UIFont`, `UIColor`, `UIImage`, `UIViewRepresentable`, `UITextView`, `UIPasteboard`, `UIApplication`, `UIMenu`, and `UIAction`. This means a real macOS integration needs more than a package manifest tweak. It requires either upstream macOS support or a maintained compatibility fork that ports UIKit-backed rendering pieces to AppKit/SwiftUI equivalents.
+
 Because the app goal prioritizes low memory, fast startup, privacy, complete Markdown behavior, and a permanent 100 MB size ceiling, this should be treated as a measured pilot rather than a full renderer replacement.
 
 ## Goals
@@ -115,7 +119,9 @@ Create a renderer mode decision layer while keeping both branches pointed at the
 
 ### Phase 3: Dependency Spike
 
-Add `SwiftStreamingMarkdown` on a short-lived branch or clearly labeled commit. Measure Package resolution, app size, offline smoke memory, and build time. Keep the feature disabled by default.
+Add `SwiftStreamingMarkdown` on a short-lived branch or clearly labeled commit. If upstream still fails macOS platform validation, use a narrow patch branch that changes only package platform declarations needed to test macOS 14 compatibility. Measure Package resolution, app size, offline smoke memory, and build time. Keep the feature disabled by default.
+
+Current Phase 3 finding: direct upstream dependency is not macOS-buildable. A manifest-only patch is also insufficient because the package currently has UIKit-coupled source files. The next spike should not touch the main app dependency graph until a macOS-compatible fork or upstream branch can compile as a standalone probe.
 
 ### Phase 4: Experimental Pending Reply Renderer
 
@@ -135,4 +141,4 @@ Rollback must be one commit or one feature flag change:
 
 ## Open Decision
 
-The recommended next implementation step is Phase 2 only: add the renderer selection boundary and fallback tests without introducing `SwiftStreamingMarkdown` yet. That prepares the app for a safe spike while preserving the current release quality.
+Phase 2 has been completed by adding the renderer selection boundary and fallback tests without introducing the dependency. Phase 3 has proven that the current upstream package cannot be linked into this macOS app without additional compatibility work. The recommended next implementation step is to create a tiny macOS compatibility fork/spike outside the main app that replaces or gates UIKit-only code, then re-run the standalone probe. The main app should keep the stable renderer and selection boundary until that standalone probe compiles.
