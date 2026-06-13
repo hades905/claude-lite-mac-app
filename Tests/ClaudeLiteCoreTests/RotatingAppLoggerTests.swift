@@ -175,4 +175,56 @@ struct RotatingAppLoggerTests {
         #expect(totalBytes <= 768)
         #expect(files.contains { $0.lastPathComponent == "app.log" })
     }
+
+    @Test
+    func loggerAvoidsRepeatedSizePassesWhilePruningManyFiles() throws {
+        let directory = try TestSupport.makeTemporaryDirectory()
+        let counter = LogPruneCounter()
+        let logger = RotatingAppLogger(
+            directoryURL: directory,
+            fileName: "app.log",
+            maxFileBytes: 1_000_000,
+            maxTotalBytes: 12_000,
+            pruneSizePassObserver: counter.recordSizePass
+        )
+
+        for index in 0 ..< 12 {
+            let url = directory.appending(path: "app.log.\(index)")
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try Data(repeating: 1, count: 10_000).write(to: url)
+            try FileManager.default.setAttributes(
+                [.modificationDate: Date(timeIntervalSinceNow: TimeInterval(-100 + index))],
+                ofItemAtPath: url.path(percentEncoded: false)
+            )
+        }
+
+        try logger.record(event: "heartbeat", metadata: ["index": "1"])
+
+        let files = try FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: [.fileSizeKey]
+        )
+        let totalBytes = try files.reduce(0) { partial, url in
+            let values = try url.resourceValues(forKeys: [.fileSizeKey])
+            return partial + (values.fileSize ?? 0)
+        }
+
+        #expect(totalBytes <= 12_000)
+        #expect(counter.sizePassCount <= 1)
+    }
+}
+
+private final class LogPruneCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var sizePasses = 0
+
+    var sizePassCount: Int {
+        lock.withLock { sizePasses }
+    }
+
+    func recordSizePass() {
+        lock.withLock {
+            sizePasses += 1
+        }
+    }
 }

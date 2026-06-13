@@ -17,6 +17,7 @@ public final class RotatingAppLogger: AppLogging, @unchecked Sendable {
     private let maxFileBytes: Int
     private let maxTotalBytes: Int
     private let fileManager: FileManager
+    private let pruneSizePassObserver: (@Sendable () -> Void)?
     private let lock = NSLock()
     private let sensitiveKeys: Set<String> = [
         "apikey", "api_key", "authorization", "bearer", "token", "key",
@@ -28,13 +29,15 @@ public final class RotatingAppLogger: AppLogging, @unchecked Sendable {
         fileName: String = "claude-lite.log",
         maxFileBytes: Int = 1_024 * 1_024,
         maxTotalBytes: Int = defaultMaxTotalBytes,
-        fileManager: FileManager = .default
+        fileManager: FileManager = .default,
+        pruneSizePassObserver: (@Sendable () -> Void)? = nil
     ) {
         self.directoryURL = directoryURL
         self.fileName = fileName
         self.maxFileBytes = maxFileBytes
         self.maxTotalBytes = maxTotalBytes
         self.fileManager = fileManager
+        self.pruneSizePassObserver = pruneSizePassObserver
     }
 
     public func record(event: String, metadata: [String: String] = [:]) throws {
@@ -149,25 +152,33 @@ public final class RotatingAppLogger: AppLogging, @unchecked Sendable {
     }
 
     private func pruneLogs() throws {
-        var logFiles = try fileManager.contentsOfDirectory(
+        let logFiles = try fileManager.contentsOfDirectory(
             at: directoryURL,
             includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey]
         ).filter { $0.lastPathComponent == fileName || $0.lastPathComponent.hasPrefix("\(fileName).") }
+        pruneSizePassObserver?()
+        let inventory = logFiles.map { url in
+            LogFile(
+                url: url,
+                size: fileSize(url),
+                modificationDate: (try? modificationDate(url)) ?? .distantPast
+            )
+        }
 
-        while totalSize(of: logFiles) > maxTotalBytes {
-            guard let oldest = try logFiles.min(by: { lhs, rhs in
-                try modificationDate(lhs) < modificationDate(rhs)
-            }) else {
-                return
+        var totalBytes = inventory.reduce(0) { partial, file in partial + file.size }
+        for file in inventory.sorted(by: { $0.modificationDate < $1.modificationDate }) where totalBytes > maxTotalBytes {
+            try? fileManager.removeItem(at: file.url)
+
+            if !fileManager.fileExists(atPath: file.url.path(percentEncoded: false)) {
+                totalBytes -= file.size
             }
-
-            try? fileManager.removeItem(at: oldest)
-            logFiles.removeAll { $0 == oldest }
         }
     }
 
-    private func totalSize(of urls: [URL]) -> Int {
-        urls.reduce(0) { partial, url in partial + fileSize(url) }
+    private struct LogFile {
+        let url: URL
+        let size: Int
+        let modificationDate: Date
     }
 
     private func fileSize(_ url: URL) -> Int {
