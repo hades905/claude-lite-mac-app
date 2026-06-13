@@ -85,64 +85,6 @@ struct ChatInteractionBehaviorTests {
     }
 
     @Test
-    func streamingMarkdownPilotOnlySelectsSafePendingAssistantMessagesWhenEnabled() {
-        #expect(
-            MessageTextRenderingStrategy.strategy(
-                for: .assistant(text: "Streaming **answer**", status: .pending),
-                streamingMarkdownPilotEnabled: false
-            ) == .nativeText
-        )
-        #expect(
-            MessageTextRenderingStrategy.strategy(
-                for: .user(text: "Streaming **answer**"),
-                streamingMarkdownPilotEnabled: true
-            ) == .nativeText
-        )
-        #expect(
-            MessageTextRenderingStrategy.strategy(
-                for: .assistant(text: "Streaming **answer**", status: .pending),
-                streamingMarkdownPilotEnabled: true
-            ) == .streamingMarkdownPilot
-        )
-        #expect(
-            MessageTextRenderingStrategy.strategy(
-                for: .assistant(text: "![remote](https://example.com/image.png)", status: .pending),
-                streamingMarkdownPilotEnabled: true
-            ) == .nativeText
-        )
-        #expect(
-            MessageTextRenderingStrategy.strategy(
-                for: .assistant(text: "- [ ] task", status: .pending),
-                streamingMarkdownPilotEnabled: true
-            ) == .nativeText
-        )
-        #expect(
-            MessageTextRenderingStrategy.strategy(
-                for: .assistant(text: "Footnote[^1]\n\n[^1]: private note", status: .pending),
-                streamingMarkdownPilotEnabled: true
-            ) == .nativeText
-        )
-        #expect(
-            MessageTextRenderingStrategy.strategy(
-                for: .assistant(text: "```mermaid\ngraph TD\nA-->B\n```", status: .pending),
-                streamingMarkdownPilotEnabled: true
-            ) == .nativeText
-        )
-        #expect(
-            MessageTextRenderingStrategy.strategy(
-                for: .assistant(text: "<script>alert(1)</script>", status: .pending),
-                streamingMarkdownPilotEnabled: true
-            ) == .nativeText
-        )
-        #expect(
-            MessageTextRenderingStrategy.strategy(
-                for: .assistant(text: "Finished **answer**", status: .sent),
-                streamingMarkdownPilotEnabled: true
-            ) == .nativeMarkdown
-        )
-    }
-
-    @Test
     func frameTrackingOnlyReportsLatestAssistantMessage() {
         let userID = UUID()
         let earlierAssistantID = UUID()

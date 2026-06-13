@@ -451,9 +451,6 @@ private struct MessageBubble: View {
                     case .webMarkdown:
                         MarkdownMessageView(markdown: message.text)
                             .frame(maxWidth: 580, alignment: .leading)
-                    case .streamingMarkdownPilot:
-                        MarkdownMessageView(markdown: message.text)
-                            .frame(maxWidth: 580, alignment: .leading)
                     }
                 }
             }
