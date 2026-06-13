@@ -4,14 +4,12 @@ import ClaudeLiteCore
 @main
 struct ClaudeLiteMacApp: App {
     private let services = LiveServiceContainer.live()
-    private let runtimeOptions = StreamingMarkdownRuntimeOptions.environment()
 
     var body: some Scene {
         WindowGroup {
             MainWindowView(
                 viewModel: ChatViewModel(services: services),
-                appLogger: services.logger,
-                streamingMarkdownPilotEnabled: runtimeOptions.streamingMarkdownPilotEnabled
+                appLogger: services.logger
             )
         }
         .windowResizability(.contentSize)

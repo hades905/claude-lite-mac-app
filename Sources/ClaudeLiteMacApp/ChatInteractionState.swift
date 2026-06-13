@@ -1,20 +1,6 @@
 import AppKit
 import ClaudeLiteCore
 
-struct StreamingMarkdownRuntimeOptions: Equatable {
-    static let pilotEnvironmentKey = "CLAUDE_LITE_STREAMING_MARKDOWN_PILOT"
-
-    let streamingMarkdownPilotEnabled: Bool
-
-    static func environment(
-        _ environment: [String: String] = ProcessInfo.processInfo.environment
-    ) -> StreamingMarkdownRuntimeOptions {
-        StreamingMarkdownRuntimeOptions(
-            streamingMarkdownPilotEnabled: environment[pilotEnvironmentKey] == "1"
-        )
-    }
-}
-
 enum ChatJumpTargetResolver {
     static func latestAssistantID(in messages: [ChatMessage]) -> UUID? {
         messages.reversed().first { message in

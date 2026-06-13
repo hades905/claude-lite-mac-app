@@ -17,16 +17,11 @@ struct MainWindowView: View {
     @State private var previewedImageAttachment: ChatAttachment?
 
     private let appLogger: AppLogging
-    private let streamingMarkdownPilotEnabled: Bool
+    private let streamingMarkdownPilotEnabled = false
 
-    init(
-        viewModel: ChatViewModel,
-        appLogger: AppLogging = NoopAppLogger(),
-        streamingMarkdownPilotEnabled: Bool = false
-    ) {
+    init(viewModel: ChatViewModel, appLogger: AppLogging = NoopAppLogger()) {
         _viewModel = State(initialValue: viewModel)
         self.appLogger = appLogger
-        self.streamingMarkdownPilotEnabled = streamingMarkdownPilotEnabled
     }
 
     var body: some View {
