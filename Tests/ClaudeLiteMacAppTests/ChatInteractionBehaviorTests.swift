@@ -62,6 +62,23 @@ struct ChatInteractionBehaviorTests {
     }
 
     @Test
+    func streamingMarkdownRuntimeOptionsDefaultOffAndRequireExplicitFlag() {
+        #expect(
+            StreamingMarkdownRuntimeOptions.environment([:]).streamingMarkdownPilotEnabled == false
+        )
+        #expect(
+            StreamingMarkdownRuntimeOptions.environment([
+                "CLAUDE_LITE_STREAMING_MARKDOWN_PILOT": "true"
+            ]).streamingMarkdownPilotEnabled == false
+        )
+        #expect(
+            StreamingMarkdownRuntimeOptions.environment([
+                "CLAUDE_LITE_STREAMING_MARKDOWN_PILOT": "1"
+            ]).streamingMarkdownPilotEnabled == true
+        )
+    }
+
+    @Test
     func appEntryPassesLiveLoggerToMainWindow() throws {
         let projectRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
@@ -71,8 +88,10 @@ struct ChatInteractionBehaviorTests {
         let source = try String(contentsOf: sourceURL, encoding: .utf8)
 
         #expect(source.contains("private let services = LiveServiceContainer.live()"))
+        #expect(source.contains("private let runtimeOptions = StreamingMarkdownRuntimeOptions.environment()"))
         #expect(source.contains("ChatViewModel(services: services)"))
         #expect(source.contains("appLogger: services.logger"))
+        #expect(source.contains("streamingMarkdownPilotEnabled: runtimeOptions.streamingMarkdownPilotEnabled"))
     }
 
     @Test
