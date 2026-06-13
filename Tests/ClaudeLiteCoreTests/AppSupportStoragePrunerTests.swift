@@ -52,6 +52,31 @@ struct AppSupportStoragePrunerTests {
         #expect(result.removedFileCount >= 1)
     }
 
+    @Test
+    func prunerAvoidsRepeatedFullDirectoryScansWhileRemovingManyFiles() throws {
+        let directory = try TestSupport.makeTemporaryDirectory()
+        let counter = ScanCounter()
+
+        try writeFile(directory.appending(path: "session.json"), byteCount: 1_000, age: 1)
+        for index in 0 ..< 12 {
+            try writeFile(
+                directory.appending(path: "Cache/cache-\(index).bin"),
+                byteCount: 10_000,
+                age: TimeInterval(100 - index)
+            )
+        }
+
+        let result = try AppSupportStoragePruner.prune(
+            directoryURL: directory,
+            maxTotalBytes: 11_000,
+            scanObserver: counter.recordScan
+        )
+
+        #expect(result.removedFileCount == 11)
+        #expect(totalSize(in: directory) <= 11_000)
+        #expect(counter.scanCount <= 3)
+    }
+
     private func writeFile(_ url: URL, byteCount: Int, age: TimeInterval) throws {
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try Data(repeating: 1, count: byteCount).write(to: url)
@@ -82,5 +107,20 @@ struct AppSupportStoragePrunerTests {
 
             return values.fileSize
         }.reduce(0, +)
+    }
+}
+
+private final class ScanCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var scans = 0
+
+    var scanCount: Int {
+        lock.withLock { scans }
+    }
+
+    func recordScan() {
+        lock.withLock {
+            scans += 1
+        }
     }
 }

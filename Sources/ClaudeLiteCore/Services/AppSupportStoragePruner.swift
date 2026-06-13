@@ -23,59 +23,108 @@ public enum AppSupportStoragePruner {
         maxTotalBytes: Int = defaultMaxTotalBytes,
         fileManager: FileManager = .default
     ) throws -> PruneResult {
+        try prune(
+            directoryURL: directoryURL,
+            maxTotalBytes: maxTotalBytes,
+            fileManager: fileManager,
+            scanObserver: nil
+        )
+    }
+
+    static func prune(
+        directoryURL: URL,
+        maxTotalBytes: Int = defaultMaxTotalBytes,
+        fileManager: FileManager = .default,
+        scanObserver: (() -> Void)? = nil
+    ) throws -> PruneResult {
         guard maxTotalBytes > 0, fileManager.fileExists(atPath: directoryURL.path(percentEncoded: false)) else {
             return PruneResult(beforeBytes: 0, afterBytes: 0, removedBytes: 0, removedFileCount: 0)
         }
 
-        let beforeBytes = totalSize(in: directoryURL, fileManager: fileManager)
+        let inventory = try storageInventory(
+            in: directoryURL,
+            fileManager: fileManager,
+            scanObserver: scanObserver
+        )
+        let beforeBytes = inventory.totalBytes
+        var afterBytes = beforeBytes
         var removedBytes = 0
         var removedFileCount = 0
-        var candidates = try reclaimableFiles(in: directoryURL, fileManager: fileManager)
-        while totalSize(in: directoryURL, fileManager: fileManager) > maxTotalBytes {
-            guard let oldest = try candidates.min(by: { lhs, rhs in
-                try modificationDate(lhs) < modificationDate(rhs)
-            }) else {
-                break
-            }
 
-            let size = fileSize(oldest)
-            try? fileManager.removeItem(at: oldest)
-            if !fileManager.fileExists(atPath: oldest.path(percentEncoded: false)) {
-                removedBytes += size
+        let candidates = inventory.reclaimableFiles.sorted {
+            $0.modificationDate < $1.modificationDate
+        }
+        for candidate in candidates where afterBytes > maxTotalBytes {
+            try? fileManager.removeItem(at: candidate.url)
+            if !fileManager.fileExists(atPath: candidate.url.path(percentEncoded: false)) {
+                removedBytes += candidate.size
                 removedFileCount += 1
+                afterBytes -= candidate.size
             }
-            candidates.removeAll { $0 == oldest }
         }
 
         return PruneResult(
             beforeBytes: beforeBytes,
-            afterBytes: totalSize(in: directoryURL, fileManager: fileManager),
+            afterBytes: afterBytes,
             removedBytes: removedBytes,
             removedFileCount: removedFileCount
         )
     }
 
-    private static func reclaimableFiles(in directoryURL: URL, fileManager: FileManager) throws -> [URL] {
+    private struct ReclaimableFile {
+        let url: URL
+        let size: Int
+        let modificationDate: Date
+    }
+
+    private struct StorageInventory {
+        let totalBytes: Int
+        let reclaimableFiles: [ReclaimableFile]
+    }
+
+    private static func storageInventory(
+        in directoryURL: URL,
+        fileManager: FileManager,
+        scanObserver: (() -> Void)?
+    ) throws -> StorageInventory {
+        scanObserver?()
         guard let enumerator = fileManager.enumerator(
             at: directoryURL,
             includingPropertiesForKeys: [.isRegularFileKey, .contentModificationDateKey, .fileSizeKey],
             options: []
         ) else {
-            return []
+            return StorageInventory(totalBytes: 0, reclaimableFiles: [])
         }
 
-        return enumerator.compactMap { item -> URL? in
+        var totalBytes = 0
+        var reclaimableFiles: [ReclaimableFile] = []
+        for item in enumerator {
             guard
                 let url = item as? URL,
-                isReclaimable(url, relativeTo: directoryURL),
-                let values = try? url.resourceValues(forKeys: [.isRegularFileKey]),
+                let values = try? url.resourceValues(forKeys: [
+                    .isRegularFileKey,
+                    .contentModificationDateKey,
+                    .fileSizeKey
+                ]),
                 values.isRegularFile == true
             else {
-                return nil
+                continue
             }
 
-            return url
+            let size = values.fileSize ?? 0
+            totalBytes += size
+            if isReclaimable(url, relativeTo: directoryURL) {
+                reclaimableFiles.append(
+                    ReclaimableFile(
+                        url: url,
+                        size: size,
+                        modificationDate: values.contentModificationDate ?? .distantPast
+                    )
+                )
+            }
         }
+
+        return StorageInventory(totalBytes: totalBytes, reclaimableFiles: reclaimableFiles)
     }
 
     private static func isReclaimable(_ url: URL, relativeTo directoryURL: URL) -> Bool {
@@ -105,41 +154,4 @@ public enum AppSupportStoragePruner {
         return components
     }
 
-    private static func totalSize(in directoryURL: URL, fileManager: FileManager) -> Int {
-        guard let enumerator = fileManager.enumerator(
-            at: directoryURL,
-            includingPropertiesForKeys: [.fileSizeKey, .isRegularFileKey],
-            options: []
-        ) else {
-            return 0
-        }
-
-        return enumerator.compactMap { item -> Int? in
-            guard
-                let url = item as? URL,
-                let values = try? url.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey]),
-                values.isRegularFile == true
-            else {
-                return nil
-            }
-
-            return values.fileSize
-        }.reduce(0, +)
-    }
-
-    private static func fileSize(_ url: URL) -> Int {
-        guard
-            let values = try? url.resourceValues(forKeys: [.fileSizeKey]),
-            let fileSize = values.fileSize
-        else {
-            return 0
-        }
-
-        return fileSize
-    }
-
-    private static func modificationDate(_ url: URL) throws -> Date {
-        let values = try url.resourceValues(forKeys: [.contentModificationDateKey])
-        return values.contentModificationDate ?? .distantPast
-    }
 }
