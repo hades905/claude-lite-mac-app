@@ -9,19 +9,14 @@ struct MainWindowView: View {
     @State private var showingImagePicker = false
     @State private var composerHeight = ChatInputHeight.default
     @State private var jumpButtonState = ChatJumpButtonState()
-    @State private var renderingDiagnosticLogger = MessageRenderingDiagnosticLogger()
     @State private var latestAssistantFrame: CGRect?
     @State private var scrollViewportHeight: CGFloat = 0
     @State private var previousLatestAssistantFrame: CGRect?
     @State private var jumpButtonIdleTask: Task<Void, Never>?
     @State private var previewedImageAttachment: ChatAttachment?
 
-    private let appLogger: AppLogging
-    private let streamingMarkdownPilotEnabled = false
-
-    init(viewModel: ChatViewModel, appLogger: AppLogging = NoopAppLogger()) {
+    init(viewModel: ChatViewModel) {
         _viewModel = State(initialValue: viewModel)
-        self.appLogger = appLogger
     }
 
     var body: some View {
@@ -149,20 +144,9 @@ struct MainWindowView: View {
                             }
 
                             ForEach(viewModel.messages) { message in
-                                MessageBubble(
-                                    message: message,
-                                    streamingMarkdownPilotEnabled: streamingMarkdownPilotEnabled,
-                                    openImage: { attachment in
-                                        previewedImageAttachment = attachment
-                                    },
-                                    onRenderDecision: { message in
-                                        renderingDiagnosticLogger.recordIfNeeded(
-                                            message: message,
-                                            streamingMarkdownPilotEnabled: streamingMarkdownPilotEnabled,
-                                            logger: appLogger
-                                        )
-                                    }
-                                )
+                                MessageBubble(message: message) { attachment in
+                                    previewedImageAttachment = attachment
+                                }
                                     .id(message.id)
                                     .background {
                                         if MessageFrameTrackingPolicy.shouldTrack(
@@ -436,9 +420,7 @@ private struct MessageFramePreferenceKey: PreferenceKey {
 
 private struct MessageBubble: View {
     let message: ChatMessage
-    let streamingMarkdownPilotEnabled: Bool
     let openImage: (ChatAttachment) -> Void
-    let onRenderDecision: (ChatMessage) -> Void
 
     var body: some View {
         VStack(alignment: message.role == .user ? .trailing : .leading, spacing: 8) {
@@ -457,10 +439,7 @@ private struct MessageBubble: View {
                 }
 
                 if !message.text.isEmpty {
-                    switch MessageTextRenderingStrategy.strategy(
-                        for: message,
-                        streamingMarkdownPilotEnabled: streamingMarkdownPilotEnabled
-                    ) {
+                    switch MessageTextRenderingStrategy.strategy(for: message) {
                     case .nativeText:
                         Text(message.text)
                             .foregroundStyle(message.status == .pending ? .secondary : .primary)
@@ -484,9 +463,6 @@ private struct MessageBubble: View {
             .frame(maxWidth: 580, alignment: message.role == .user ? .trailing : .leading)
         }
         .frame(maxWidth: .infinity, alignment: message.role == .user ? .trailing : .leading)
-        .onAppear {
-            onRenderDecision(message)
-        }
     }
 }
 
