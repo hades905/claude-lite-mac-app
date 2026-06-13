@@ -13,10 +13,22 @@ enum MessageTextRenderingStrategy: Equatable {
     case nativeText
     case nativeMarkdown
     case webMarkdown
+    case streamingMarkdownPilot
 
-    static func strategy(for message: ChatMessage) -> MessageTextRenderingStrategy {
-        if message.role == .user || message.status == .pending {
+    static func strategy(
+        for message: ChatMessage,
+        streamingMarkdownPilotEnabled: Bool = false
+    ) -> MessageTextRenderingStrategy {
+        if message.role == .user {
             return .nativeText
+        }
+
+        if message.status == .pending {
+            guard streamingMarkdownPilotEnabled, isEligibleForStreamingMarkdownPilot(message.text) else {
+                return .nativeText
+            }
+
+            return .streamingMarkdownPilot
         }
 
         return requiresWebMarkdown(message.text) ? .webMarkdown : .nativeMarkdown
@@ -24,6 +36,38 @@ enum MessageTextRenderingStrategy: Equatable {
 
     private static func requiresWebMarkdown(_ text: String) -> Bool {
         MarkdownHTMLDocument.containsSupportedMath(in: text) || containsMarkdownTable(in: text)
+    }
+
+    private static func isEligibleForStreamingMarkdownPilot(_ text: String) -> Bool {
+        !containsMarkdownImage(in: text)
+            && !containsTaskListItem(in: text)
+            && !text.contains("[^")
+            && !containsMermaidFence(in: text)
+            && !containsRawHTML(in: text)
+    }
+
+    private static func containsMarkdownImage(in text: String) -> Bool {
+        text.contains("![")
+    }
+
+    private static func containsTaskListItem(in text: String) -> Bool {
+        text.split(whereSeparator: \.isNewline).contains { line in
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            return trimmed.hasPrefix("- [ ]")
+                || trimmed.hasPrefix("- [x]")
+                || trimmed.hasPrefix("- [X]")
+                || trimmed.hasPrefix("* [ ]")
+                || trimmed.hasPrefix("* [x]")
+                || trimmed.hasPrefix("* [X]")
+        }
+    }
+
+    private static func containsMermaidFence(in text: String) -> Bool {
+        text.range(of: #"```\s*mermaid\b"#, options: [.regularExpression, .caseInsensitive]) != nil
+    }
+
+    private static func containsRawHTML(in text: String) -> Bool {
+        text.range(of: #"<[A-Za-z][^>]*>"#, options: .regularExpression) != nil
     }
 
     private static func containsMarkdownTable(in text: String) -> Bool {
