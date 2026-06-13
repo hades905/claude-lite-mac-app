@@ -143,6 +143,66 @@ struct ChatInteractionBehaviorTests {
     }
 
     @Test
+    func streamingMarkdownPilotDecisionReportsFallbackReasons() {
+        #expect(
+            MessageTextRenderingStrategy.decision(
+                for: .assistant(text: "Streaming **answer**", status: .pending),
+                streamingMarkdownPilotEnabled: false
+            ).streamingMarkdownFallbackReason == .pilotDisabled
+        )
+        #expect(
+            MessageTextRenderingStrategy.decision(
+                for: .user(text: "Streaming **answer**"),
+                streamingMarkdownPilotEnabled: true
+            ).streamingMarkdownFallbackReason == .notAssistant
+        )
+        #expect(
+            MessageTextRenderingStrategy.decision(
+                for: .assistant(text: "Finished **answer**", status: .sent),
+                streamingMarkdownPilotEnabled: true
+            ).streamingMarkdownFallbackReason == .notPending
+        )
+        #expect(
+            MessageTextRenderingStrategy.decision(
+                for: .assistant(text: "![remote](https://example.com/image.png)", status: .pending),
+                streamingMarkdownPilotEnabled: true
+            ).streamingMarkdownFallbackReason == .markdownImage
+        )
+        #expect(
+            MessageTextRenderingStrategy.decision(
+                for: .assistant(text: "- [x] task", status: .pending),
+                streamingMarkdownPilotEnabled: true
+            ).streamingMarkdownFallbackReason == .taskList
+        )
+        #expect(
+            MessageTextRenderingStrategy.decision(
+                for: .assistant(text: "Footnote[^1]\n\n[^1]: private note", status: .pending),
+                streamingMarkdownPilotEnabled: true
+            ).streamingMarkdownFallbackReason == .footnote
+        )
+        #expect(
+            MessageTextRenderingStrategy.decision(
+                for: .assistant(text: "```mermaid\ngraph TD\nA-->B\n```", status: .pending),
+                streamingMarkdownPilotEnabled: true
+            ).streamingMarkdownFallbackReason == .mermaid
+        )
+        #expect(
+            MessageTextRenderingStrategy.decision(
+                for: .assistant(text: "<script>alert(1)</script>", status: .pending),
+                streamingMarkdownPilotEnabled: true
+            ).streamingMarkdownFallbackReason == .rawHTML
+        )
+
+        let selectedDecision = MessageTextRenderingStrategy.decision(
+            for: .assistant(text: "Streaming **answer**", status: .pending),
+            streamingMarkdownPilotEnabled: true
+        )
+
+        #expect(selectedDecision.strategy == .streamingMarkdownPilot)
+        #expect(selectedDecision.streamingMarkdownFallbackReason == nil)
+    }
+
+    @Test
     func frameTrackingOnlyReportsLatestAssistantMessage() {
         let userID = UUID()
         let earlierAssistantID = UUID()
