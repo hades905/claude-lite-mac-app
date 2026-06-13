@@ -15,84 +15,35 @@ enum MessageTextRenderingStrategy: Equatable {
     case webMarkdown
     case streamingMarkdownPilot
 
-    struct Decision: Equatable {
-        let strategy: MessageTextRenderingStrategy
-        let streamingMarkdownFallbackReason: StreamingMarkdownFallbackReason?
-    }
-
-    enum StreamingMarkdownFallbackReason: Equatable {
-        case pilotDisabled
-        case notAssistant
-        case notPending
-        case markdownImage
-        case taskList
-        case footnote
-        case mermaid
-        case rawHTML
-    }
-
     static func strategy(
         for message: ChatMessage,
         streamingMarkdownPilotEnabled: Bool = false
     ) -> MessageTextRenderingStrategy {
-        decision(
-            for: message,
-            streamingMarkdownPilotEnabled: streamingMarkdownPilotEnabled
-        ).strategy
-    }
-
-    static func decision(
-        for message: ChatMessage,
-        streamingMarkdownPilotEnabled: Bool = false
-    ) -> Decision {
         if message.role == .user {
-            return Decision(strategy: .nativeText, streamingMarkdownFallbackReason: .notAssistant)
+            return .nativeText
         }
 
         if message.status == .pending {
-            if !streamingMarkdownPilotEnabled {
-                return Decision(strategy: .nativeText, streamingMarkdownFallbackReason: .pilotDisabled)
+            guard streamingMarkdownPilotEnabled, isEligibleForStreamingMarkdownPilot(message.text) else {
+                return .nativeText
             }
 
-            if let fallbackReason = streamingMarkdownPilotFallbackReason(for: message.text) {
-                return Decision(strategy: .nativeText, streamingMarkdownFallbackReason: fallbackReason)
-            }
-
-            return Decision(strategy: .streamingMarkdownPilot, streamingMarkdownFallbackReason: nil)
+            return .streamingMarkdownPilot
         }
 
-        let strategy: MessageTextRenderingStrategy = requiresWebMarkdown(message.text) ? .webMarkdown : .nativeMarkdown
-        return Decision(strategy: strategy, streamingMarkdownFallbackReason: .notPending)
+        return requiresWebMarkdown(message.text) ? .webMarkdown : .nativeMarkdown
     }
 
     private static func requiresWebMarkdown(_ text: String) -> Bool {
         MarkdownHTMLDocument.containsSupportedMath(in: text) || containsMarkdownTable(in: text)
     }
 
-    private static func streamingMarkdownPilotFallbackReason(
-        for text: String
-    ) -> StreamingMarkdownFallbackReason? {
-        if containsMarkdownImage(in: text) {
-            return .markdownImage
-        }
-
-        if containsTaskListItem(in: text) {
-            return .taskList
-        }
-
-        if text.contains("[^") {
-            return .footnote
-        }
-
-        if containsMermaidFence(in: text) {
-            return .mermaid
-        }
-
-        if containsRawHTML(in: text) {
-            return .rawHTML
-        }
-
-        return nil
+    private static func isEligibleForStreamingMarkdownPilot(_ text: String) -> Bool {
+        !containsMarkdownImage(in: text)
+            && !containsTaskListItem(in: text)
+            && !text.contains("[^")
+            && !containsMermaidFence(in: text)
+            && !containsRawHTML(in: text)
     }
 
     private static func containsMarkdownImage(in text: String) -> Bool {
