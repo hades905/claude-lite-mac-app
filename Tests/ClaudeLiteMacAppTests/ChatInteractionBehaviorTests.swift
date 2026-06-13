@@ -39,6 +39,43 @@ struct ChatInteractionBehaviorTests {
     }
 
     @Test
+    func mainWindowRecordsMessageRenderingDiagnosticsWhenMessagesAppear() throws {
+        let projectRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let sourceURL = projectRoot.appending(path: "Sources/ClaudeLiteMacApp/MainWindowView.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+
+        #expect(source.contains("@State private var renderingDiagnosticLogger = MessageRenderingDiagnosticLogger()"))
+        #expect(source.contains("private let appLogger: AppLogging"))
+        #expect(source.contains("onRenderDecision: { message in"))
+        #expect(source.contains("renderingDiagnosticLogger.recordIfNeeded("))
+        #expect(source.contains("logger: appLogger"))
+        #expect(source.contains(".onAppear {"))
+        #expect(source.contains("onRenderDecision(message)"))
+        let renderingStrategyStart = try #require(source.range(of: "switch MessageTextRenderingStrategy.strategy("))
+        let nativeTextStart = try #require(source.range(of: "case .nativeText:"))
+        let renderingStrategySource = String(source[renderingStrategyStart.lowerBound..<nativeTextStart.lowerBound])
+        #expect(renderingStrategySource.contains("for: message"))
+        #expect(renderingStrategySource.contains("streamingMarkdownPilotEnabled: streamingMarkdownPilotEnabled"))
+    }
+
+    @Test
+    func appEntryPassesLiveLoggerToMainWindow() throws {
+        let projectRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let sourceURL = projectRoot.appending(path: "Sources/ClaudeLiteMacApp/ClaudeLiteMacApp.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+
+        #expect(source.contains("private let services = LiveServiceContainer.live()"))
+        #expect(source.contains("ChatViewModel(services: services)"))
+        #expect(source.contains("appLogger: services.logger"))
+    }
+
+    @Test
     func restoredImageAttachmentsWithoutLocalFileRenderAsChips() throws {
         let projectRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
@@ -200,6 +237,101 @@ struct ChatInteractionBehaviorTests {
 
         #expect(selectedDecision.strategy == .streamingMarkdownPilot)
         #expect(selectedDecision.streamingMarkdownFallbackReason == nil)
+    }
+
+    @Test
+    func streamingMarkdownRenderDiagnosticsAvoidMessageContent() {
+        let message = ChatMessage.assistant(
+            text: "private assistant reply with **markdown**",
+            status: .pending
+        )
+        let decision = MessageTextRenderingStrategy.decision(
+            for: message,
+            streamingMarkdownPilotEnabled: false
+        )
+
+        let metadata = MessageRenderingDiagnostics.metadata(
+            for: message,
+            decision: decision
+        )
+
+        #expect(MessageRenderingDiagnostics.event == "message_render_decided")
+        #expect(metadata["role"] == "assistant")
+        #expect(metadata["status"] == "pending")
+        #expect(metadata["strategy"] == "nativeText")
+        #expect(metadata["streamingMarkdownFallbackReason"] == "pilotDisabled")
+        #expect(metadata["attachmentCount"] == "0")
+        #expect(metadata["textCharacterCount"] == "\(message.text.count)")
+        #expect(!metadata.keys.contains("text"))
+        #expect(!metadata.values.contains { $0.contains("private assistant reply") })
+    }
+
+    @Test
+    func messageRenderingDiagnosticLoggerRecordsEachMessageOnlyOnceWithoutContent() throws {
+        let logger = RecordingAppLogger()
+        var diagnosticLogger = MessageRenderingDiagnosticLogger()
+        let message = ChatMessage.assistant(
+            text: "private assistant reply with **markdown**",
+            status: .pending
+        )
+
+        diagnosticLogger.recordIfNeeded(
+            message: message,
+            streamingMarkdownPilotEnabled: false,
+            logger: logger
+        )
+        diagnosticLogger.recordIfNeeded(
+            message: message,
+            streamingMarkdownPilotEnabled: false,
+            logger: logger
+        )
+
+        let entry = try #require(logger.entries.first)
+        #expect(logger.entries.count == 1)
+        #expect(entry.event == MessageRenderingDiagnostics.event)
+        #expect(entry.metadata["strategy"] == "nativeText")
+        #expect(entry.metadata["streamingMarkdownFallbackReason"] == "pilotDisabled")
+        #expect(!entry.metadata.values.contains { $0.contains("private assistant reply") })
+    }
+
+    @Test
+    func messageRenderingDiagnosticLoggerRecordsWhenRenderedStateChanges() {
+        let logger = RecordingAppLogger()
+        var diagnosticLogger = MessageRenderingDiagnosticLogger()
+        let messageID = UUID()
+        let pendingMessage = ChatMessage.assistant(
+            id: messageID,
+            text: "正在回复...",
+            status: .pending
+        )
+        let sentMessage = ChatMessage.assistant(
+            id: messageID,
+            text: "final **markdown** answer",
+            status: .sent
+        )
+
+        diagnosticLogger.recordIfNeeded(
+            message: pendingMessage,
+            streamingMarkdownPilotEnabled: false,
+            logger: logger
+        )
+        diagnosticLogger.recordIfNeeded(
+            message: sentMessage,
+            streamingMarkdownPilotEnabled: false,
+            logger: logger
+        )
+        diagnosticLogger.recordIfNeeded(
+            message: sentMessage,
+            streamingMarkdownPilotEnabled: false,
+            logger: logger
+        )
+
+        #expect(logger.entries.count == 2)
+        #expect(logger.entries.map { $0.metadata["status"] } == ["pending", "sent"])
+        #expect(logger.entries.map { $0.metadata["strategy"] } == ["nativeText", "nativeMarkdown"])
+        #expect(!logger.entries.contains { entry in
+            entry.metadata.values.contains { $0.contains("final **markdown** answer") }
+        })
     }
 
     @Test
@@ -385,5 +517,13 @@ struct ChatInteractionBehaviorTests {
         CGImageDestinationAddImage(destination, image, nil)
         #expect(CGImageDestinationFinalize(destination))
         return fileURL
+    }
+}
+
+private final class RecordingAppLogger: AppLogging, @unchecked Sendable {
+    private(set) var entries: [(event: String, metadata: [String: String])] = []
+
+    func record(event: String, metadata: [String: String]) throws {
+        entries.append((event: event, metadata: metadata))
     }
 }

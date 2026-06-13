@@ -153,6 +153,109 @@ enum MessageTextRenderingStrategy: Equatable {
     }
 }
 
+enum MessageRenderingDiagnostics {
+    static let event = "message_render_decided"
+
+    static func metadata(
+        for message: ChatMessage,
+        decision: MessageTextRenderingStrategy.Decision
+    ) -> [String: String] {
+        var metadata = [
+            "role": message.role.rawValue,
+            "status": message.status.rawValue,
+            "strategy": decision.strategy.diagnosticValue,
+            "attachmentCount": "\(message.attachments.count)",
+            "textCharacterCount": "\(message.text.count)"
+        ]
+
+        if let fallbackReason = decision.streamingMarkdownFallbackReason {
+            metadata["streamingMarkdownFallbackReason"] = fallbackReason.diagnosticValue
+        }
+
+        return metadata
+    }
+}
+
+struct MessageRenderingDiagnosticLogger {
+    private var recordedStates: Set<RecordedState> = []
+
+    mutating func recordIfNeeded(
+        message: ChatMessage,
+        streamingMarkdownPilotEnabled: Bool,
+        logger: AppLogging
+    ) {
+        let decision = MessageTextRenderingStrategy.decision(
+            for: message,
+            streamingMarkdownPilotEnabled: streamingMarkdownPilotEnabled
+        )
+        let recordedState = RecordedState(messageID: message.id, status: message.status, decision: decision)
+        guard recordedStates.insert(recordedState).inserted else {
+            return
+        }
+
+        try? logger.record(
+            event: MessageRenderingDiagnostics.event,
+            metadata: MessageRenderingDiagnostics.metadata(for: message, decision: decision)
+        )
+    }
+
+    private struct RecordedState: Hashable {
+        let messageID: UUID
+        let status: ChatMessage.Status
+        let strategy: MessageTextRenderingStrategy
+        let fallbackReason: MessageTextRenderingStrategy.StreamingMarkdownFallbackReason?
+
+        init(
+            messageID: UUID,
+            status: ChatMessage.Status,
+            decision: MessageTextRenderingStrategy.Decision
+        ) {
+            self.messageID = messageID
+            self.status = status
+            self.strategy = decision.strategy
+            self.fallbackReason = decision.streamingMarkdownFallbackReason
+        }
+    }
+}
+
+private extension MessageTextRenderingStrategy {
+    var diagnosticValue: String {
+        switch self {
+        case .nativeText:
+            "nativeText"
+        case .nativeMarkdown:
+            "nativeMarkdown"
+        case .webMarkdown:
+            "webMarkdown"
+        case .streamingMarkdownPilot:
+            "streamingMarkdownPilot"
+        }
+    }
+}
+
+private extension MessageTextRenderingStrategy.StreamingMarkdownFallbackReason {
+    var diagnosticValue: String {
+        switch self {
+        case .pilotDisabled:
+            "pilotDisabled"
+        case .notAssistant:
+            "notAssistant"
+        case .notPending:
+            "notPending"
+        case .markdownImage:
+            "markdownImage"
+        case .taskList:
+            "taskList"
+        case .footnote:
+            "footnote"
+        case .mermaid:
+            "mermaid"
+        case .rawHTML:
+            "rawHTML"
+        }
+    }
+}
+
 enum MessageFrameTrackingPolicy {
     static func shouldTrack(messageID: UUID, trackedMessageID: UUID?) -> Bool {
         messageID == trackedMessageID
